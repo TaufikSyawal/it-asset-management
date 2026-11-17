@@ -6,15 +6,17 @@
 -- ==============================================================================
 
 -- 1. Master Operating Companies
-insert into public.companies (id, code, name, description)
+insert into public.companies (id, code, name, description, is_active)
 values
-  ('comp-gmd-001', 'GMD', 'GMD', 'GMD Enterprise Operations'),
-  ('comp-gmc-002', 'GMC', 'GMC', 'GMC Industrial & Technology Solutions'),
-  ('comp-tel-003', 'TEL', 'TEL', 'TEL Logistics & Enterprise Services')
+  ('comp-gmd-001', 'GMD', 'GMD', 'GMD Enterprise Operations', true),
+  ('comp-gmc-002', 'GMC', 'GMC', 'GMC Industrial & Technology Solutions', true),
+  ('comp-tel-003', 'TEL', 'TEL', 'TEL Logistics & Enterprise Services', true),
+  ('comp-rci-004', 'RCI', 'RCI', 'RCI Resource & Commercial Infrastructure', true)
 on conflict (code) do update
 set
   name = excluded.name,
-  description = excluded.description;
+  description = excluded.description,
+  is_active = excluded.is_active;
 
 -- 2. Initial Super Admin Profile Template
 -- Run this block in the Supabase SQL Editor AFTER creating the admin user under Authentication -> Users:

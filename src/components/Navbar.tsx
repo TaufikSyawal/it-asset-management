@@ -42,7 +42,7 @@ export default function Navbar({
                   IT Asset Inventory
                 </span>
                 <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-                  GMD • GMC • TEL
+                  GMD • GMC • TEL • RCI
                 </span>
               </div>
               <p className="text-xs text-slate-500 hidden sm:block">

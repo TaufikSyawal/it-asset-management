@@ -14,6 +14,7 @@ export interface RolePermissions {
   canManageStockOpname: boolean;
   canReconcileStockOpname: boolean;
   canManagePhotos: boolean;
+  canManageCompanies: boolean;
   restrictedToOwnAssets: boolean;
 }
 
@@ -32,6 +33,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canManageStockOpname: true,
     canReconcileStockOpname: true,
     canManagePhotos: true,
+    canManageCompanies: true,
     restrictedToOwnAssets: false,
   },
   MANAGEMENT: {
@@ -48,6 +50,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canManageStockOpname: false,
     canReconcileStockOpname: false,
     canManagePhotos: false,
+    canManageCompanies: false,
     restrictedToOwnAssets: false,
   },
   IT_ADMIN: {
@@ -64,6 +67,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canManageStockOpname: true,
     canReconcileStockOpname: true,
     canManagePhotos: true,
+    canManageCompanies: false,
     restrictedToOwnAssets: false,
   },
   FINANCE: {
@@ -80,6 +84,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canManageStockOpname: false,
     canReconcileStockOpname: false,
     canManagePhotos: false,
+    canManageCompanies: false,
     restrictedToOwnAssets: false,
   },
   AUDITOR: {
@@ -96,6 +101,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canManageStockOpname: true,
     canReconcileStockOpname: true,
     canManagePhotos: false,
+    canManageCompanies: false,
     restrictedToOwnAssets: false,
   },
   EMPLOYEE: {
@@ -112,6 +118,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canManageStockOpname: false,
     canReconcileStockOpname: false,
     canManagePhotos: false,
+    canManageCompanies: false,
     restrictedToOwnAssets: true, // Only sees assets assigned to themselves
   },
 };

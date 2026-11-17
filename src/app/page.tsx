@@ -270,7 +270,9 @@ export default function AppShell() {
 
   const activeCompanyName =
     selectedCompanyId === "ALL"
-      ? "All Entities (GMD • GMC • TEL)"
+      ? companies.length > 0
+        ? `All Entities (${companies.map((c) => c.code).join(" • ")})`
+        : "All Entities"
       : companies.find((c) => c.id === selectedCompanyId)?.name || "Selected Entity";
 
   // Navigation shortcuts from Overview pages
@@ -502,6 +504,7 @@ export default function AppShell() {
               currentRole={currentRole}
               onRoleChange={handleRoleChange}
               companies={companies}
+              onRefreshCompanies={fetchMetadata}
             />
           )}
         </main>

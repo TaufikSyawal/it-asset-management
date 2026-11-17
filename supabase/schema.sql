@@ -106,12 +106,13 @@ exception when duplicate_object then null; end $$;
 
 -- 3. TABLES
 
--- 3.1 Companies Table (GMD, GMC, TEL)
+-- 3.1 Companies Table (GMD, GMC, TEL, RCI and dynamic entities)
 create table if not exists public.companies (
   id text primary key default gen_random_uuid()::text,
-  code text unique not null, -- GMD, GMC, TEL
-  name text not null,        -- GMD, GMC, TEL
+  code text unique not null,
+  name text not null,
   description text,
+  is_active boolean not null default true,
   created_at timestamptz not null default timezone('utc'::text, now()),
   updated_at timestamptz not null default timezone('utc'::text, now())
 );
@@ -1043,3 +1044,50 @@ create policy "Admins can delete asset photos"
     bucket_id = 'asset-photos'
     and public.can_manage_assets()
   );
+
+-- ==============================================================================
+-- 10. AUTH TRIGGER: AUTO-PROVISION INITIAL SUPER ADMIN & PROFILES
+-- ==============================================================================
+create or replace function public.handle_new_auth_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_is_first boolean;
+  v_name text;
+begin
+  select not exists (select 1 from public.user_profiles) into v_is_first;
+
+  v_name := coalesce(new.raw_user_meta_data->>'name', split_part(new.email, '@', 1));
+
+  insert into public.user_profiles (
+    id,
+    email,
+    name,
+    role,
+    all_companies,
+    allowed_companies
+  ) values (
+    new.id,
+    new.email,
+    v_name,
+    case when v_is_first then 'SUPER_ADMIN'::public.user_role else 'EMPLOYEE'::public.user_role end,
+    case when v_is_first then true else false end,
+    '{}'
+  )
+  on conflict (id) do update
+  set
+    email = excluded.email,
+    updated_at = now();
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_auth_user();
+

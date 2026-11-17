@@ -133,7 +133,7 @@ export default function AssignmentsView({ stats, onViewAssetDetails }: Assignmen
                     </td>
                     <td className="py-3 px-4">
                       <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-800 border border-slate-200">
-                        {item.asset?.company?.code || "GMD"}
+                        {item.asset?.company?.code || "-"}
                       </span>
                     </td>
                     <td className="py-3 px-4">

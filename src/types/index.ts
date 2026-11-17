@@ -34,6 +34,8 @@ export interface CompanyDTO {
   code: string;
   name: string;
   description?: string | null;
+  isActive?: boolean;
+  is_active?: boolean;
   _count?: {
     assets: number;
     employees: number;

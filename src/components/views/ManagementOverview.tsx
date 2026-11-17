@@ -100,22 +100,24 @@ export default function ManagementOverview({
     insights.push(`${missingSerials} unnumbered legacy assets without recorded serial numbers.`);
   }
 
-  // Company colors for SVG Donut
+  // Company colors for SVG Donut (GMD, GMC, TEL, RCI and dynamic entities)
   const COMPANY_COLORS: Record<string, string> = {
     GMD: "#4f46e5", // Indigo
     GMC: "#0284c7", // Sky
     TEL: "#059669", // Emerald
+    RCI: "#d97706", // Amber
     Other: "#64748b",
   };
+  const COLOR_PALETTE = ["#4f46e5", "#0284c7", "#059669", "#d97706", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
 
   // Prepare donut segments
   const companyData: Array<{ code: string; count: number; percentage: number; color: string }> = (
     stats.byCompany || []
-  ).map((c: any) => ({
+  ).map((c: any, idx: number) => ({
     code: c.code,
     count: c.count,
     percentage: c.percentage,
-    color: COMPANY_COLORS[c.code] || "#64748b",
+    color: COMPANY_COLORS[c.code] || COLOR_PALETTE[idx % COLOR_PALETTE.length],
   }));
 
   // Calculate SVG Donut stroke offsets

@@ -38,7 +38,7 @@ export default function AssetInventoryView(props: AssetInventoryViewProps) {
             Hardware Asset Repository
           </h2>
           <p className="text-xs text-slate-500">
-            Persistent PostgreSQL inventory records across GMD, GMC, and TEL entities
+            Persistent PostgreSQL inventory records across {props.companies && props.companies.length > 0 ? props.companies.map((c) => c.code).join(", ") : "multi-entity"} enterprise operations
           </p>
         </div>
       </div>

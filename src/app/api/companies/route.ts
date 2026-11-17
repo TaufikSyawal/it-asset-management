@@ -15,12 +15,13 @@ export async function GET() {
       orderBy: { code: "asc" },
     });
 
-    // If companies are not yet created in the DB, auto-initialize GMD, GMC, TEL
+    // If companies are not yet created in the DB, auto-initialize GMD, GMC, TEL, RCI
     if (companies.length === 0) {
       const defaultCompanies = [
         { code: "GMD", name: "GMD", description: "GMD Entity" },
         { code: "GMC", name: "GMC", description: "GMC Entity" },
         { code: "TEL", name: "TEL", description: "TEL Entity" },
+        { code: "RCI", name: "RCI", description: "RCI Entity" },
       ];
 
       for (const comp of defaultCompanies) {

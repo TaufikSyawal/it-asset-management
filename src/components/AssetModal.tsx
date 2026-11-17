@@ -157,7 +157,7 @@ export default function AssetModal({
                 {isEditing ? `Edit Asset: ${assetToEdit.assetTag}` : "Register New IT Asset"}
               </h3>
               <p className="text-xs text-slate-500">
-                PostgreSQL persistent record • Multi-entity: GMD, GMC, TEL
+                PostgreSQL persistent record • Multi-entity operations
               </p>
             </div>
           </div>

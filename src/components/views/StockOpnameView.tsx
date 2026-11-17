@@ -705,7 +705,7 @@ export default function StockOpnameView({
               </span>
             </div>
             <p className="text-xs text-indigo-200/80 mt-1 max-w-xl leading-relaxed">
-              Conduct scheduled physical hardware audits across GMD, GMC, and TEL. Generate industrial 50×25mm and 60×40mm QR labels, capture expected inventory snapshots, and reconcile variances in real-time.
+              Conduct scheduled physical hardware audits across all operating entities. Generate industrial 50×25mm and 60×40mm QR labels, capture expected inventory snapshots, and reconcile variances in real-time.
             </p>
           </div>
         </div>

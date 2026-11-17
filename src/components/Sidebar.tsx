@@ -152,7 +152,7 @@ export default function Sidebar({
                 IT Asset Inventory
               </span>
               <span className="text-[10px] font-semibold tracking-wider uppercase text-brand-400 block truncate">
-                GMD • GMC • TEL
+                GMD • GMC • TEL • RCI
               </span>
             </div>
           )}

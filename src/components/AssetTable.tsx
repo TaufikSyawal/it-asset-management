@@ -337,7 +337,7 @@ export default function AssetTable({
                   {/* Company */}
                   <td className="py-3 px-3">
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-800 border border-slate-200">
-                      {asset.company?.code || "GMD"}
+                      {asset.company?.code || "-"}
                     </span>
                   </td>
 

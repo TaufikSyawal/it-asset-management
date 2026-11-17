@@ -151,7 +151,9 @@ export default function NewStockOpnameModal({
                 onChange={(e) => setCompanyId(e.target.value)}
                 className="w-full px-2.5 py-2 border border-slate-200 rounded-xl text-xs bg-white"
               >
-                <option value="ALL">All Entities (GMD/GMC/TEL)</option>
+                <option value="ALL">
+                  All Entities {companies.length > 0 ? `(${companies.map((c) => c.code).join("/")})` : ""}
+                </option>
                 {companies.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.code} - {c.name}

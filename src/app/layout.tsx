@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "IT Asset Management System | GMD • GMC • TEL",
+  title: "IT Asset Management System | GMD • GMC • TEL • RCI",
   description: "Enterprise IT Hardware & Asset Inventory Management System",
 };
 

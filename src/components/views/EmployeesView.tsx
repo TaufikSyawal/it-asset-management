@@ -92,7 +92,7 @@ export default function EmployeesView({
             <span>Personnel & Custody Directory</span>
           </h2>
           <p className="text-xs text-slate-500">
-            Employees across GMD, GMC, and TEL entities holding active company hardware
+            Employees across {companies && companies.length > 0 ? companies.map((c) => c.code).join(", ") : "multi-entity"} organizations holding active company hardware
           </p>
         </div>
 
@@ -156,7 +156,7 @@ export default function EmployeesView({
                     <span className="text-[11px] font-mono text-slate-500">{emp.employeeId}</span>
                   </div>
                   <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-800 border border-slate-200">
-                    {emp.company?.code || "GMD"}
+                    {emp.company?.code || "-"}
                   </span>
                 </div>
 

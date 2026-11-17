@@ -36,11 +36,12 @@ test("Schema defines all 6 enterprise user roles including MANAGEMENT", () => {
   }
 });
 
-test("Schema defines master companies GMD, GMC, and TEL", () => {
+test("Schema defines master companies GMD, GMC, TEL, and RCI", () => {
   const seedSql = fs.readFileSync(path.resolve("supabase/seed.sql"), "utf-8");
   assert(seedSql.includes("'GMD'"), "Missing company code GMD");
   assert(seedSql.includes("'GMC'"), "Missing company code GMC");
   assert(seedSql.includes("'TEL'"), "Missing company code TEL");
+  assert(seedSql.includes("'RCI'"), "Missing company code RCI");
   // Zero tester assets in seed.sql
   assert(!seedSql.includes("ast_"), "Seed file must not contain test assets");
 });
@@ -132,6 +133,15 @@ test("EMPLOYEE is strictly restricted to own assigned devices", () => {
   assert.strictEqual(p.restrictedToOwnAssets, true);
   assert.strictEqual(p.canViewFinancials, false);
   assert.strictEqual(p.canCreateAssets, false);
+});
+
+test("Super Admin has canManageCompanies permission while other roles do not", () => {
+  assert.strictEqual(ROLE_PERMISSIONS.SUPER_ADMIN.canManageCompanies, true);
+  assert.strictEqual(ROLE_PERMISSIONS.MANAGEMENT.canManageCompanies, false);
+  assert.strictEqual(ROLE_PERMISSIONS.IT_ADMIN.canManageCompanies, false);
+  assert.strictEqual(ROLE_PERMISSIONS.FINANCE.canManageCompanies, false);
+  assert.strictEqual(ROLE_PERMISSIONS.AUDITOR.canManageCompanies, false);
+  assert.strictEqual(ROLE_PERMISSIONS.EMPLOYEE.canManageCompanies, false);
 });
 
 test("sanitizeAssetForRole cleanly masks purchaseCost and netBookValue for unauthorized roles", () => {

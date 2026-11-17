@@ -80,11 +80,13 @@ export function parseExcelInventory(buffer: ArrayBuffer | Buffer): {
     if (!assetTag) errors.push("Asset Tag is required");
     if (!assetName) errors.push("Asset Name is required");
 
-    // Standardize company: default to GMD if not specified or unknown
+    // Standardize company: match GMC, TEL, RCI, GMD or custom uppercase code
     let companyCode = "GMD";
     if (companyRaw.includes("GMC")) companyCode = "GMC";
     else if (companyRaw.includes("TEL")) companyCode = "TEL";
+    else if (companyRaw.includes("RCI")) companyCode = "RCI";
     else if (companyRaw.includes("GMD")) companyCode = "GMD";
+    else if (companyRaw.trim()) companyCode = companyRaw.trim().toUpperCase();
 
     // Standardize category
     let category: AssetCategory = "LAPTOP";

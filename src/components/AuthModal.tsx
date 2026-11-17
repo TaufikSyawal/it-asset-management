@@ -48,7 +48,7 @@ export default function AuthModal({ isOpen, onSuccess }: AuthModalProps) {
           </div>
           <h2 className="text-xl font-bold tracking-tight">IT Asset Management System</h2>
           <p className="text-xs text-slate-300 mt-1 font-medium">
-            Authorized Enterprise Access • GMD | GMC | TEL
+            Authorized Enterprise Access • GMD | GMC | TEL | RCI
           </p>
         </div>
 
