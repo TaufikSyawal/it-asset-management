@@ -161,3 +161,4 @@ export function registerAutoSyncListener(callback?: (result: { synced: number; f
   window.addEventListener("online", handleOnline);
   return () => window.removeEventListener("online", handleOnline);
 }
+

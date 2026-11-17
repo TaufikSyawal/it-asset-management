@@ -584,3 +584,4 @@ async function computeStats(companyId?: string) {
     return null;
   }
 }
+

@@ -36,3 +36,5 @@ yarn-error.log*
 *.pem
 Thumbs.db
 
+.temp/
+supabase/.temp/

@@ -253,3 +253,4 @@ export function exportAssetsToExcel(assets: AssetDTO[], filename = "IT_Asset_Inv
 
   XLSX.writeFile(workbook, filename);
 }
+

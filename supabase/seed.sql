@@ -32,3 +32,4 @@ set
   role = 'SUPER_ADMIN',
   all_companies = true;
 */
+

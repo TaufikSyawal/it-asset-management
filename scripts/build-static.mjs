@@ -26,3 +26,4 @@ try {
     fs.renameSync(tempDir, apiDir);
   }
 }
+

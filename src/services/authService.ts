@@ -104,3 +104,4 @@ export function onAuthStateChange(callback: (user: UserSession | null) => void) 
     unsubscribe: () => subscription.unsubscribe(),
   };
 }
+

@@ -413,3 +413,4 @@ export async function exportStockOpnameToExcel(sessionId: string): Promise<void>
   const filename = `Stock_Opname_${session.sessionNumber}_${new Date().toISOString().slice(0, 10)}.xlsx`;
   XLSX.writeFile(workbook, filename);
 }
+
