@@ -106,13 +106,12 @@ exception when duplicate_object then null; end $$;
 
 -- 3. TABLES
 
--- 3.1 Companies Table (GMD, GMC, TEL, RCI and dynamic entities)
+-- 3.1 Companies Table (GMD, GMC, TEL)
 create table if not exists public.companies (
   id text primary key default gen_random_uuid()::text,
-  code text unique not null,
-  name text not null,
+  code text unique not null, -- GMD, GMC, TEL
+  name text not null,        -- GMD, GMC, TEL
   description text,
-  is_active boolean not null default true,
   created_at timestamptz not null default timezone('utc'::text, now()),
   updated_at timestamptz not null default timezone('utc'::text, now())
 );
@@ -1090,4 +1089,18 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_auth_user();
+
+-- ==============================================================================
+-- 11. ROLE PERMISSIONS & SCHEMA PRIVILEGES
+-- ==============================================================================
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+grant select on public.companies to anon;
+grant select on public.assets_view to anon;
+grant usage, select on all sequences in schema public to authenticated, anon;
+grant execute on all routines in schema public to authenticated, anon;
+
+alter default privileges in schema public grant select, insert, update, delete on tables to authenticated;
+alter default privileges in schema public grant usage, select on sequences to authenticated, anon;
+alter default privileges in schema public grant execute on routines to authenticated, anon;
 
