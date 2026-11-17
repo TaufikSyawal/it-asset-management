@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import Sidebar, { NavView } from "@/components/Sidebar";
 import TopNav from "@/components/TopNav";
 import DbStatusBanner from "@/components/DbStatusBanner";
+import AuthModal from "@/components/AuthModal";
 
 // Views
 import ManagementOverview from "@/components/views/ManagementOverview";
@@ -23,7 +24,14 @@ import AssetDetailDrawer from "@/components/AssetDetailDrawer";
 import ExcelImportModal from "@/components/ExcelImportModal";
 import QRLabelModal from "@/components/QRLabelModal";
 
-import { AssetDTO, CompanyDTO, EmployeeDTO, UserRole, AssignmentAction } from "@/types";
+// Types & Services
+import { AssetDTO, CompanyDTO, EmployeeDTO, UserRole, AssignmentAction, UserSession } from "@/types";
+import { getCompanies } from "@/services/companyService";
+import { getEmployees } from "@/services/employeeService";
+import { getAssets, getAssetById, archiveAsset } from "@/services/assetService";
+import { getUserProfile, signOut, onAuthStateChange } from "@/services/authService";
+import { registerAutoSyncListener, getOfflineScans, syncOfflineScans } from "@/services/offlineSyncService";
+import { isSupabaseConfigured } from "@/lib/supabase";
 
 export default function AppShell() {
   // Navigation & Layout
@@ -31,11 +39,15 @@ export default function AppShell() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
+  // Authentication & RBAC
+  const [authenticatedUser, setAuthenticatedUser] = useState<UserSession | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [currentRole, setCurrentRole] = useState<UserRole>("SUPER_ADMIN");
+
   // Metadata & Tenant
   const [companies, setCompanies] = useState<CompanyDTO[]>([]);
   const [employees, setEmployees] = useState<EmployeeDTO[]>([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>("ALL");
-  const [currentRole, setCurrentRole] = useState<UserRole>("SUPER_ADMIN");
 
   // Assets & Stats
   const [assets, setAssets] = useState<AssetDTO[]>([]);
@@ -50,6 +62,9 @@ export default function AppShell() {
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [categoryFilter, setCategoryFilter] = useState("ALL");
   const [duplicateOnly, setDuplicateOnly] = useState(false);
+
+  // Offline Audit Queue
+  const [offlineQueueCount, setOfflineQueueCount] = useState(0);
 
   // Modals
   const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
@@ -68,57 +83,90 @@ export default function AppShell() {
   const [isLabelModalOpen, setIsLabelModalOpen] = useState(false);
   const [assetsToPrint, setAssetsToPrint] = useState<AssetDTO[]>([]);
 
-  // 1. Fetch metadata (companies, role, employees)
+  // 1. Check Auth state & Offline sync on mount
+  useEffect(() => {
+    if (isSupabaseConfigured()) {
+      getUserProfile().then((user) => {
+        if (user) {
+          setAuthenticatedUser(user);
+          setCurrentRole(user.role);
+        } else {
+          setIsAuthModalOpen(true);
+        }
+      });
+
+      const authSub = onAuthStateChange((user) => {
+        setAuthenticatedUser(user);
+        if (user) {
+          setCurrentRole(user.role);
+          setIsAuthModalOpen(false);
+        } else {
+          setIsAuthModalOpen(true);
+        }
+      });
+
+      return () => authSub.unsubscribe();
+    } else {
+      // Local dev role fetch
+      fetch("/api/auth/role")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.user?.role) setCurrentRole(data.user.role);
+        })
+        .catch(() => {});
+    }
+  }, []);
+
+  // 2. Offline sync listener
+  useEffect(() => {
+    const updateOfflineCount = async () => {
+      const queued = await getOfflineScans();
+      setOfflineQueueCount(queued.length);
+    };
+
+    updateOfflineCount();
+    const unregister = registerAutoSyncListener(async (res) => {
+      if (res.synced > 0) {
+        updateOfflineCount();
+        fetchAssets();
+      }
+    });
+
+    return () => unregister();
+  }, []);
+
+  // 3. Fetch metadata (companies, employees)
   const fetchMetadata = async () => {
     try {
-      const [compRes, roleRes, empRes] = await Promise.all([
-        fetch("/api/companies"),
-        fetch("/api/auth/role"),
-        fetch("/api/employees"),
+      const [compData, empData] = await Promise.all([
+        getCompanies(),
+        getEmployees(),
       ]);
-
-      if (compRes.ok) {
-        const compData = await compRes.json();
-        setCompanies(compData.companies || []);
-      }
-
-      if (roleRes.ok) {
-        const roleData = await roleRes.json();
-        if (roleData.user?.role) {
-          setCurrentRole(roleData.user.role);
-        }
-      }
-
-      if (empRes.ok) {
-        const empData = await empRes.json();
-        setEmployees(empData.employees || []);
-      }
+      setCompanies(compData || []);
+      setEmployees(empData || []);
     } catch (err) {
       console.error("Error fetching metadata:", err);
     }
   };
 
-  // 2. Fetch assets & statistics
+  // 4. Fetch assets & statistics
   const fetchAssets = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (search) params.set("search", search);
-      if (selectedCompanyId && selectedCompanyId !== "ALL") params.set("companyId", selectedCompanyId);
-      if (statusFilter && statusFilter !== "ALL") params.set("status", statusFilter);
-      if (categoryFilter && categoryFilter !== "ALL") params.set("category", categoryFilter);
-      if (duplicateOnly) params.set("isDuplicateTag", "true");
-      params.set("page", String(currentPage));
-      params.set("limit", "15");
+      const result = await getAssets({
+        search,
+        companyId: selectedCompanyId,
+        status: statusFilter,
+        category: categoryFilter,
+        isDuplicateTag: duplicateOnly,
+        page: currentPage,
+        limit: 15,
+      });
 
-      const res = await fetch(`/api/assets?${params.toString()}`);
-      if (res.ok) {
-        const data = await res.json();
-        setAssets(data.assets || []);
-        setTotalAssets(data.total || 0);
-        setTotalPages(data.totalPages || 1);
-        setStats(data.stats || null);
-      }
+      setAssets(result.assets || []);
+      setTotalAssets(result.total || 0);
+      setTotalPages(result.totalPages || 1);
+      setStats(result.stats || null);
     } catch (err) {
       console.error("Error fetching assets:", err);
     } finally {
@@ -143,6 +191,14 @@ export default function AppShell() {
   const handleCompanyChange = (companyId: string) => {
     setSelectedCompanyId(companyId);
     setCurrentPage(1);
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+    setAuthenticatedUser(null);
+    if (isSupabaseConfigured()) {
+      setIsAuthModalOpen(true);
+    }
   };
 
   const handleAddAsset = () => {
@@ -193,32 +249,22 @@ export default function AppShell() {
       handleViewDetails(found);
       return;
     }
-    try {
-      const res = await fetch(`/api/assets/${assetId}`);
-      if (res.ok) {
-        const data = await res.json();
-        handleViewDetails(data.asset);
-      }
-    } catch (e) {
-      console.error(e);
+    const asset = await getAssetById(assetId);
+    if (asset) {
+      handleViewDetails(asset);
     }
   };
 
   const handleArchiveAsset = async (asset: AssetDTO) => {
-    const confirmMsg = `Are you sure you want to archive asset ${asset.assetTag} (${asset.assetName})?\n\nThis will soft-archive the record in PostgreSQL and preserve its entire audit history.`;
+    const confirmMsg = `Are you sure you want to archive asset ${asset.assetTag} (${asset.assetName})?\n\nThis will soft-archive the record and preserve its entire audit history.`;
     if (!window.confirm(confirmMsg)) return;
 
-    try {
-      const res = await fetch(`/api/assets/${asset.id}`, { method: "DELETE" });
-      if (res.ok) {
-        fetchAssets();
-        fetchMetadata();
-      } else {
-        const errData = await res.json();
-        alert(errData.error || "Failed to archive asset");
-      }
-    } catch (err: any) {
-      alert("Error archiving asset: " + err.message);
+    const res = await archiveAsset(asset.id);
+    if (res.success) {
+      fetchAssets();
+      fetchMetadata();
+    } else {
+      alert(res.error || "Failed to archive asset");
     }
   };
 
@@ -294,6 +340,26 @@ export default function AppShell() {
         {/* Database Sync Banner */}
         <DbStatusBanner onRefresh={() => { fetchMetadata(); fetchAssets(); }} />
 
+        {/* Offline Scans Synchronizing Badge */}
+        {offlineQueueCount > 0 && (
+          <div className="bg-sky-50 border-b border-sky-200 px-4 py-1.5 text-xs text-sky-800 flex items-center justify-between">
+            <span>Offline Audit Mode: <strong>{offlineQueueCount}</strong> scan(s) queued locally.</span>
+            <button
+              onClick={async () => {
+                const res = await syncOfflineScans();
+                if (res.synced > 0) {
+                  const queued = await getOfflineScans();
+                  setOfflineQueueCount(queued.length);
+                  fetchAssets();
+                }
+              }}
+              className="px-2 py-0.5 bg-sky-600 hover:bg-sky-700 text-white rounded text-[11px] font-semibold"
+            >
+              Sync Now
+            </button>
+          </div>
+        )}
+
         {/* Top Navigation */}
         <TopNav
           activeView={activeView}
@@ -305,6 +371,8 @@ export default function AppShell() {
           onAddAsset={handleAddAsset}
           onOpenImport={() => setIsImportModalOpen(true)}
           onToggleMobileSidebar={() => setMobileSidebarOpen(!mobileSidebarOpen)}
+          authenticatedUser={authenticatedUser}
+          onSignOut={handleSignOut}
         />
 
         {/* Page Content View Router */}
@@ -413,7 +481,7 @@ export default function AppShell() {
               assets={assets}
               companies={companies}
               currentRole={currentRole}
-              currentUserName={currentRole.replace("_", " ")}
+              currentUserName={authenticatedUser?.name || currentRole.replace("_", " ")}
               onViewDetails={handleViewDetails}
               onOpenLabelModal={handlePrintBatchLabels}
             />
@@ -440,6 +508,17 @@ export default function AppShell() {
       </div>
 
       {/* Global Modals & Drawers */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onSuccess={(user) => {
+          setAuthenticatedUser(user);
+          setCurrentRole(user.role);
+          setIsAuthModalOpen(false);
+          fetchMetadata();
+          fetchAssets();
+        }}
+      />
+
       <AssetModal
         isOpen={isAssetModalOpen}
         onClose={() => setIsAssetModalOpen(false)}

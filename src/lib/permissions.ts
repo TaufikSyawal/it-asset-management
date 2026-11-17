@@ -34,6 +34,22 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canManagePhotos: true,
     restrictedToOwnAssets: false,
   },
+  MANAGEMENT: {
+    canViewAssets: true,
+    canCreateAssets: false,
+    canEditAssets: false,
+    canArchiveAssets: false,
+    canAssignAssets: false,
+    canViewFinancials: true, // Executive portfolio & NBV oversight
+    canEditFinancials: false,
+    canImportAssets: false,
+    canViewAuditLogs: true,
+    canManageUsers: false,
+    canManageStockOpname: false,
+    canReconcileStockOpname: false,
+    canManagePhotos: false,
+    restrictedToOwnAssets: false,
+  },
   IT_ADMIN: {
     canViewAssets: true,
     canCreateAssets: true,
@@ -72,7 +88,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canEditAssets: false,
     canArchiveAssets: false,
     canAssignAssets: false,
-    canViewFinancials: true, // Auditors can view financial metrics for compliance
+    canViewFinancials: false, // Strictly masked for non-finance/management
     canEditFinancials: false,
     canImportAssets: false,
     canViewAuditLogs: true,

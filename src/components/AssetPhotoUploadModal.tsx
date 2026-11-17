@@ -2,6 +2,7 @@
 
 import React, { useState, useRef } from "react";
 import { PhotoCategory } from "@/types";
+import { uploadAssetPhoto } from "@/services/photoService";
 import {
   X,
   Upload,
@@ -116,26 +117,19 @@ export default function AssetPhotoUploadModal({
     setError(null);
 
     try {
-      const formData = new FormData();
-      for (const item of queuedFiles) {
-        formData.append("files", item.file);
-      }
-      formData.append("category", category);
-      if (description.trim()) {
-        formData.append("description", description.trim());
-      }
-      if (isPrimary) {
-        formData.append("isPrimary", "true");
-      }
-
-      const res = await fetch(`/api/assets/${assetId}/photos`, {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to upload photo(s)");
+      for (let i = 0; i < queuedFiles.length; i++) {
+        const item = queuedFiles[i];
+        const markAsPrimary = isPrimary && i === 0;
+        const res = await uploadAssetPhoto(
+          assetId,
+          item.file,
+          category,
+          description.trim() || undefined,
+          markAsPrimary
+        );
+        if (res.error) {
+          throw new Error(res.error);
+        }
       }
 
       // Cleanup object URLs

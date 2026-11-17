@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { AssetDTO, AssetPhotoDTO, PhotoCategory, UserRole } from "@/types";
 import { ROLE_PERMISSIONS } from "@/lib/permissions";
+import { deleteAssetPhoto, setPrimaryPhoto } from "@/services/photoService";
 import {
   Camera,
   Upload,
@@ -78,15 +79,9 @@ export default function AssetPhotoGallery({
     setErrorMessage(null);
 
     try {
-      const res = await fetch(`/api/assets/${asset.id}/photos/${photo.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isPrimary: true }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to set as primary photo");
+      const res = await setPrimaryPhoto(asset.id, photo.id);
+      if (!res.success) {
+        throw new Error(res.error || "Failed to set as primary photo");
       }
 
       if (lightboxPhoto && lightboxPhoto.id === photo.id) {
@@ -111,13 +106,9 @@ export default function AssetPhotoGallery({
     setErrorMessage(null);
 
     try {
-      const res = await fetch(`/api/assets/${asset.id}/photos/${photo.id}`, {
-        method: "DELETE",
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to delete photo");
+      const res = await deleteAssetPhoto(asset.id, photo.id, photo.fileKey, photo.thumbnailKey || undefined);
+      if (!res.success) {
+        throw new Error(res.error || "Failed to delete photo");
       }
 
       if (lightboxPhoto?.id === photo.id) {

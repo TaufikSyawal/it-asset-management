@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { StockOpnameSessionDTO } from "@/types";
+import { reconcileStockOpnameSession } from "@/services/stockOpnameService";
 import { X, CheckCircle2, AlertTriangle, ShieldCheck, HelpCircle } from "lucide-react";
 
 interface ReconcileModalProps {
@@ -44,20 +45,13 @@ export default function ReconcileModal({
     setError(null);
 
     try {
-      const res = await fetch(`/api/stock-opname/sessions/${session.id}/reconcile`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          applyLocationUpdates,
-          applyConditionUpdates,
-          markUnscannedAsMissing,
-          reconciliationNotes: reconciliationNotes.trim() || undefined,
-        }),
-      });
+      const res = await reconcileStockOpnameSession(
+        session.id,
+        reconciliationNotes.trim() || undefined
+      );
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || "Failed to reconcile audit session");
+      if (res.error) {
+        throw new Error(res.error);
       }
 
       onSuccess();

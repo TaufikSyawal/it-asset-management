@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { AssetDTO, UserRole } from "@/types";
 import { ROLE_PERMISSIONS } from "@/lib/permissions";
+import { getAssetById } from "@/services/assetService";
 import {
   X,
   Laptop,
@@ -66,12 +67,9 @@ export default function AssetDetailDrawer({
   const refreshAssetData = async () => {
     if (!activeAsset) return;
     try {
-      const res = await fetch(`/api/assets/${activeAsset.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.asset) {
-          setLocalAsset(data.asset);
-        }
+      const asset = await getAssetById(activeAsset.id);
+      if (asset) {
+        setLocalAsset(asset);
       }
     } catch (err) {
       console.error("Failed to refresh asset:", err);

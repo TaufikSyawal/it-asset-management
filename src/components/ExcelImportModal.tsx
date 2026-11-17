@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import * as XLSX from "xlsx";
-import { X, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, Download, ArrowRight, RefreshCw } from "lucide-react";
+import { X, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, Download, RefreshCw } from "lucide-react";
+import { parseExcelFileForPreview, executeBatchImport, downloadExcelTemplate } from "@/services/excelService";
 
 interface ExcelImportModalProps {
   isOpen: boolean;
@@ -31,131 +31,44 @@ export default function ExcelImportModal({
     setLoading(true);
 
     try {
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-      formData.append("dryRun", "true");
-
-      const res = await fetch("/api/import", {
-        method: "POST",
-        body: formData,
+      const parsed = await parseExcelFileForPreview(selectedFile);
+      setPreviewData({
+        totalRows: parsed.totalRows,
+        validRows: parsed.validRows,
+        invalidRows: parsed.invalidRows,
+        duplicateTagsCount: 0,
+        preview: parsed.rows.slice(0, 50),
+        rows: parsed.rows,
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to parse Excel file");
-      }
-
-      setPreviewData(data);
     } catch (err: any) {
-      setError(err.message || "Failed to process Excel spreadsheet");
+      setError(err.message || "Failed to parse Excel spreadsheet");
     } finally {
       setLoading(false);
     }
   };
 
   const handleCommitImport = async () => {
-    if (!file) return;
+    if (!file || !previewData?.rows) return;
     setLoading(true);
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("dryRun", "false");
-
-      const res = await fetch("/api/import", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Batch import failed");
+      const result = await executeBatchImport(file, previewData.rows);
+      if (!result.success) {
+        throw new Error(result.errors.join(", ") || "Batch import failed");
       }
 
-      setImportResult(data);
+      setImportResult({
+        message: `Successfully imported ${result.inserted} assets into the database.`,
+        inserted: result.inserted,
+        failed: result.failed,
+      });
       onSuccess();
     } catch (err: any) {
-      setError(err.message || "Failed to import into PostgreSQL");
+      setError(err.message || "Failed to import into database");
     } finally {
       setLoading(false);
     }
-  };
-
-  const downloadSampleTemplate = () => {
-    const sampleHeaders = [
-      {
-        "Asset Tag": "GMD-LPT-101",
-        "Asset Name": "Dell Latitude 5430",
-        "Company": "GMD",
-        "Category": "Laptop",
-        "Model": "Latitude 5430",
-        "CPU": "Intel Core i5-1245U",
-        "RAM": "16 GB DDR4",
-        "Serial Number": "890XBC2",
-        "MAC Address": "A0:B1:C2:D3:E4:F5",
-        "Status": "In Use",
-        "Physical Condition": "Good",
-        "Assigned Employee": "Aditya Putra",
-        "Location": "HQ Floor 2",
-        "Purchase Date": "2023-09-15",
-        "Purchase Cost": "16500000",
-        "Useful Life": "36",
-        "Laptop Code": "GMD-POOL-09",
-        "Laptop Account": "LOCAL-USER",
-        "Username": "aditya.p",
-        "Notes": "Corporate standard laptop",
-      },
-      {
-        "Asset Tag": "GMC-LPT-055",
-        "Asset Name": "ThinkPad T14s",
-        "Company": "GMC",
-        "Category": "Laptop",
-        "Model": "20WM007BUS",
-        "CPU": "AMD Ryzen 7 PRO 5850U",
-        "RAM": "16 GB LPDDR4x",
-        "Serial Number": "", // Demonstrates optional serial number
-        "MAC Address": "",
-        "Status": "Available",
-        "Physical Condition": "Excellent",
-        "Assigned Employee": "",
-        "Location": "GMC Warehouse Rack 1",
-        "Purchase Date": "2023-10-01",
-        "Purchase Cost": "19000000",
-        "Useful Life": "36",
-        "Laptop Code": "GMC-LPT-55",
-        "Laptop Account": "GMC-ADMIN",
-        "Username": "",
-        "Notes": "Unassigned stock",
-      },
-      {
-        "Asset Tag": "TEL-DSK-020",
-        "Asset Name": "Lenovo ThinkCentre M70q",
-        "Company": "TEL",
-        "Category": "Desktop",
-        "Model": "11MY001KUS",
-        "CPU": "Intel Core i7-12700T",
-        "RAM": "32 GB DDR4",
-        "Serial Number": "MJ0EX891",
-        "MAC Address": "74:D4:35:E1:90:02",
-        "Status": "In Use",
-        "Physical Condition": "Good",
-        "Assigned Employee": "Fajar Hidayat",
-        "Location": "Data Center TEL",
-        "Purchase Date": "2023-04-18",
-        "Purchase Cost": "22000000",
-        "Useful Life": "48",
-        "Laptop Code": "TEL-SRV-01",
-        "Laptop Account": "TEL-ADMIN",
-        "Username": "fajar.h",
-        "Notes": "NOC diagnostic terminal",
-      },
-    ];
-
-    const ws = XLSX.utils.json_to_sheet(sampleHeaders);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Inventory");
-    XLSX.writeFile(wb, "IT_Asset_Inventory_Template.xlsx");
   };
 
   return (
@@ -172,7 +85,7 @@ export default function ExcelImportModal({
                 Excel Inventory Batch Importer
               </h3>
               <p className="text-xs text-slate-500">
-                Parse existing spreadsheets into PostgreSQL • Auto-flag duplicate tags
+                Parse existing spreadsheets into Database • Auto-detect duplicate tags & specifications
               </p>
             </div>
           </div>
@@ -200,7 +113,7 @@ export default function ExcelImportModal({
               </div>
               <h4 className="text-base font-bold text-slate-900">Import Completed Successfully</h4>
               <p className="text-xs text-slate-600 max-w-md mx-auto">
-                {importResult.message} All imported assets and employees have been recorded into the PostgreSQL database.
+                {importResult.message} All validated assets have been cleanly written to the database.
               </p>
               <div className="pt-4">
                 <button
@@ -233,14 +146,14 @@ export default function ExcelImportModal({
                     {file ? file.name : "Click or drag your Excel file here (.xlsx, .xls)"}
                   </span>
                   <span className="text-xs text-slate-500 mt-1 block">
-                    Maps 19 standard columns: Tag, Name, Company, Specs, S/N, Status, Employee, etc.
+                    Maps standard columns: Tag, Name, Company, Specs, S/N, Status, Employee, Cost, etc.
                   </span>
                 </label>
 
                 <div className="mt-4 pt-4 border-t border-slate-200 flex items-center justify-center gap-3">
                   <button
                     type="button"
-                    onClick={downloadSampleTemplate}
+                    onClick={downloadExcelTemplate}
                     className="text-xs text-brand-600 hover:text-brand-800 font-semibold flex items-center gap-1.5"
                   >
                     <Download className="w-3.5 h-3.5" />
@@ -342,7 +255,7 @@ export default function ExcelImportModal({
                   className="px-5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-lg shadow-sm shadow-emerald-200 flex items-center gap-1.5 transition-all disabled:opacity-50"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-                  {loading ? "Writing to PostgreSQL..." : `Import ${previewData.validRows} Assets`}
+                  {loading ? "Writing to Database..." : `Import ${previewData.validRows} Assets`}
                 </button>
               )}
             </div>
@@ -352,4 +265,3 @@ export default function ExcelImportModal({
     </div>
   );
 }
-

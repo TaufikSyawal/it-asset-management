@@ -7,12 +7,21 @@ export const DEMO_USERS: Record<UserRole, UserSession> = {
     name: "System Super Admin",
     email: "superadmin@company.internal",
     role: "SUPER_ADMIN",
+    allCompanies: true,
+  },
+  MANAGEMENT: {
+    id: "usr_management",
+    name: "Executive Director (Management)",
+    email: "management@company.internal",
+    role: "MANAGEMENT",
+    allCompanies: true,
   },
   IT_ADMIN: {
     id: "usr_it_admin",
     name: "Alex Pratama (IT Admin)",
     email: "itadmin@company.internal",
     role: "IT_ADMIN",
+    allCompanies: true,
   },
   FINANCE: {
     id: "usr_finance",

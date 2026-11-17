@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { CompanyDTO, AssetCategory, AssetDTO } from "@/types";
+import { createStockOpnameSession } from "@/services/stockOpnameService";
 import { X, Layers, AlertCircle, CheckCircle2, Building, MapPin, Tag, User } from "lucide-react";
 
 interface NewStockOpnameModalProps {
@@ -68,22 +69,16 @@ export default function NewStockOpnameModal({
     setError(null);
 
     try {
-      const res = await fetch("/api/stock-opname/sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: title.trim(),
-          companyId,
-          locationScope,
-          categoryScope,
-          conductedBy: conductedBy.trim() || currentUserName,
-          notes: notes.trim() || undefined,
-        }),
+      const res = await createStockOpnameSession({
+        title: title.trim(),
+        companyId,
+        locationScope,
+        categoryScope,
+        notes: notes.trim() || undefined,
       });
 
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || "Failed to create audit session");
+      if (res.error) {
+        throw new Error(res.error);
       }
 
       onSuccess();

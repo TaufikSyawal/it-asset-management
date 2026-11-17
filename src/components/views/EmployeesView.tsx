@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { EmployeeDTO, AssetDTO, CompanyDTO, UserRole } from "@/types";
 import { Users, Building, Laptop, Mail, Search, Plus, UserCheck, X, AlertCircle } from "lucide-react";
 import { ROLE_PERMISSIONS } from "@/lib/permissions";
+import { createEmployee } from "@/services/employeeService";
 
 interface EmployeesViewProps {
   employees: EmployeeDTO[];
@@ -57,21 +58,16 @@ export default function EmployeesView({
     setError(null);
 
     try {
-      const res = await fetch("/api/employees", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: newName.trim(),
-          employeeId: newEmpId.trim(),
-          companyId: newCompanyId,
-          department: newDept.trim() || undefined,
-          email: newEmail.trim() || undefined,
-        }),
+      const res = await createEmployee({
+        name: newName.trim(),
+        employeeId: newEmpId.trim(),
+        companyId: newCompanyId,
+        department: newDept.trim() || undefined,
+        email: newEmail.trim() || undefined,
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to add employee");
+      if (res.error) {
+        throw new Error(res.error);
       }
 
       setIsAddModalOpen(false);

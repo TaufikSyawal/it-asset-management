@@ -3,6 +3,14 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { AssetDTO, CompanyDTO, UserRole, StockOpnameSessionDTO, StockOpnameItemDTO, PhysicalCondition } from "@/types";
 import { ROLE_PERMISSIONS } from "@/lib/permissions";
+import {
+  getStockOpnameSessions,
+  getStockOpnameSessionDetails,
+  recordScan,
+  deleteStockOpnameSession,
+  exportStockOpnameToExcel,
+} from "@/services/stockOpnameService";
+import { parseQRScanInput } from "@/lib/qrcode";
 import QRCameraScanner from "@/components/QRCameraScanner";
 import NewStockOpnameModal from "@/components/NewStockOpnameModal";
 import ReconcileModal from "@/components/ReconcileModal";
@@ -69,11 +77,8 @@ export default function StockOpnameView({
   const fetchSessions = useCallback(async () => {
     setLoadingSessions(true);
     try {
-      const res = await fetch("/api/stock-opname/sessions");
-      if (res.ok) {
-        const data = await res.json();
-        setSessions(data.sessions || []);
-      }
+      const list = await getStockOpnameSessions();
+      setSessions(list || []);
     } catch (err) {
       console.error("Error loading Stock Opname sessions:", err);
     } finally {
@@ -85,12 +90,11 @@ export default function StockOpnameView({
   const fetchActiveSession = useCallback(async (id: string) => {
     setLoadingActiveSession(true);
     try {
-      const res = await fetch(`/api/stock-opname/sessions/${id}`);
-      if (res.ok) {
-        const data = await res.json();
-        setActiveSession(data.session);
-        if (data.session.locationScope && data.session.locationScope !== "ALL" && !currentScanLocation) {
-          setCurrentScanLocation(data.session.locationScope);
+      const session = await getStockOpnameSessionDetails(id);
+      if (session) {
+        setActiveSession(session);
+        if (session.locationScope && session.locationScope !== "ALL" && !currentScanLocation) {
+          setCurrentScanLocation(session.locationScope);
         }
       }
     } catch (err) {
@@ -117,31 +121,45 @@ export default function StockOpnameView({
     if (!activeSessionId) return { success: false, message: "No active session selected" };
 
     try {
-      const res = await fetch(`/api/stock-opname/sessions/${activeSessionId}/scan`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          rawInput: scannedRaw,
-          actualLocation: currentScanLocation || undefined,
-          actualCondition: currentScanCondition,
-          scannedBy: currentUserName,
-        }),
+      const parsed = parseQRScanInput(scannedRaw);
+      let targetAssetId = parsed.assetId;
+
+      if (!targetAssetId) {
+        const tagToMatch = (parsed.assetTag || scannedRaw).trim().toLowerCase();
+        const matched = assets.find(
+          (a) =>
+            a.id === scannedRaw.trim() ||
+            a.assetTag.toLowerCase() === tagToMatch ||
+            (a.serialNumber && a.serialNumber.toLowerCase() === scannedRaw.trim().toLowerCase())
+        );
+        if (matched) {
+          targetAssetId = matched.id;
+        }
+      }
+
+      if (!targetAssetId) {
+        targetAssetId = scannedRaw.trim();
+      }
+
+      const res = await recordScan(activeSessionId, targetAssetId, {
+        location: currentScanLocation || "HQ",
+        condition: currentScanCondition,
+        notes: `Scanned by ${currentUserName}`,
       });
 
-      const data = await res.json();
-
-      if (!res.ok) {
+      if (res.error) {
         return {
           success: false,
-          message: data.message || data.error || "Asset not found in inventory",
+          message: res.error,
         };
       }
 
-      // Refresh active session data
       fetchActiveSession(activeSessionId);
       return {
         success: true,
-        message: data.message || `Scanned: ${data.asset.assetTag} (${data.verificationStatus})`,
+        message: res.isOffline
+          ? "Scan queued in offline storage."
+          : `Scanned: ${targetAssetId}`,
       };
     } catch (err: any) {
       return { success: false, message: err.message || "Failed to communicate with audit server" };
@@ -153,17 +171,12 @@ export default function StockOpnameView({
     e.stopPropagation();
     if (!window.confirm(`Are you sure you want to delete audit session ${session.sessionNumber} (${session.title})?`)) return;
 
-    try {
-      const res = await fetch(`/api/stock-opname/sessions/${session.id}`, { method: "DELETE" });
-      if (res.ok) {
-        if (activeSessionId === session.id) setActiveSessionId(null);
-        fetchSessions();
-      } else {
-        const err = await res.json();
-        alert(err.error || "Failed to delete session");
-      }
-    } catch (err: any) {
-      alert("Error deleting session: " + err.message);
+    const res = await deleteStockOpnameSession(session.id);
+    if (res.success) {
+      if (activeSessionId === session.id) setActiveSessionId(null);
+      fetchSessions();
+    } else {
+      alert(res.error || "Failed to delete session");
     }
   };
 
@@ -261,14 +274,14 @@ export default function StockOpnameView({
               Print QR Labels
             </button>
 
-            <a
-              href={`/api/stock-opname/sessions/${activeSession.id}/export`}
-              download
+            <button
+              type="button"
+              onClick={() => exportStockOpnameToExcel(activeSession.id)}
               className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-xs font-semibold hover:bg-slate-50 transition-colors shadow-2xs"
             >
               <Download className="w-3.5 h-3.5 text-slate-500" />
               Export Excel
-            </a>
+            </button>
 
             {!isCompleted && permissions.canReconcileStockOpname && (
               <button
@@ -914,14 +927,16 @@ export default function StockOpnameView({
                         >
                           Open Audit
                         </button>
-                        <a
-                          href={`/api/stock-opname/sessions/${s.id}/export`}
-                          download
-                          onClick={(e) => e.stopPropagation()}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            exportStockOpnameToExcel(s.id);
+                          }}
                           className="text-xs font-semibold text-slate-500 hover:text-slate-700"
                         >
                           Excel
-                        </a>
+                        </button>
                         {!isCompleted && permissions.canManageStockOpname && (
                           <button
                             type="button"

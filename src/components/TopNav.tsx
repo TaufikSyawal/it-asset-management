@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { UserRole, CompanyDTO } from "@/types";
+import { UserRole, CompanyDTO, UserSession } from "@/types";
 import RoleSelector from "./RoleSelector";
 import { Plus, Upload, Menu, Building2, Search } from "lucide-react";
 import { ROLE_PERMISSIONS } from "@/lib/permissions";
@@ -17,6 +17,8 @@ interface TopNavProps {
   onAddAsset: () => void;
   onOpenImport: () => void;
   onToggleMobileSidebar: () => void;
+  authenticatedUser?: UserSession | null;
+  onSignOut?: () => void;
 }
 
 const VIEW_TITLES: Record<NavView, { title: string; subtitle: string }> = {
@@ -68,6 +70,8 @@ export default function TopNav({
   onAddAsset,
   onOpenImport,
   onToggleMobileSidebar,
+  authenticatedUser,
+  onSignOut,
 }: TopNavProps) {
   const permissions = ROLE_PERMISSIONS[currentRole];
   const pageMeta = VIEW_TITLES[activeView] || {
@@ -132,7 +136,12 @@ export default function TopNav({
 
           {/* Right: Role Switcher & Action Buttons */}
           <div className="flex items-center gap-2">
-            <RoleSelector currentRole={currentRole} onRoleChange={onRoleChange} />
+            <RoleSelector
+              currentRole={currentRole}
+              onRoleChange={onRoleChange}
+              authenticatedUser={authenticatedUser}
+              onSignOut={onSignOut}
+            />
 
             {permissions.canImportAssets && (
               <button

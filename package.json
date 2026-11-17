@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:static": "node scripts/build-static.mjs",
     "start": "next start",
     "lint": "next lint",
     "prisma:generate": "prisma generate",
@@ -15,10 +16,12 @@
     "test:print": "node test-print-layout.mjs",
     "test:photos": "node test-photos.mjs",
     "test:drawer": "node test-drawer-presentation.mjs",
-    "test:all": "node test-e2e.mjs && node test-phase2.mjs && node test-print-layout.mjs && node test-photos.mjs && node test-drawer-presentation.mjs"
+    "test:security": "ts-node -O '{\"module\":\"commonjs\"}' test-supabase-security.ts",
+    "test:all": "node test-e2e.mjs && node test-phase2.mjs && node test-print-layout.mjs && node test-photos.mjs && node test-drawer-presentation.mjs && npm run test:security"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
+    "@supabase/supabase-js": "^2.119.0",
     "bcryptjs": "^2.4.3",
     "clsx": "^2.1.1",
     "jsqr": "^1.4.0",

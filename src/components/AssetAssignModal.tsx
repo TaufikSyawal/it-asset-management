@@ -2,6 +2,8 @@
 
 import React, { useState } from "react";
 import { AssetDTO, EmployeeDTO, AssignmentAction, PhysicalCondition } from "@/types";
+import { performAssignment } from "@/services/assignmentService";
+import { uploadAssetPhoto } from "@/services/photoService";
 import {
   X,
   UserCheck,
@@ -89,45 +91,29 @@ export default function AssetAssignModal({
     setError(null);
 
     try {
-      const res = await fetch(`/api/assets/${activeAsset.id}/assign`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          actionType,
-          employeeId: actionType === "RETURN" ? undefined : employeeId,
-          conditionAtAction,
-          handoverDocRef: handoverDocRef.trim() || undefined,
-          notes: notes.trim() || undefined,
-        }),
+      const result = await performAssignment({
+        assetId: activeAsset.id,
+        actionType,
+        employeeId: actionType === "RETURN" ? undefined : employeeId,
+        condition: conditionAtAction,
+        handoverDocRef: handoverDocRef.trim() || undefined,
+        notes: notes.trim() || undefined,
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Assignment operation failed");
+      if (!result.success) {
+        throw new Error(result.error || "Assignment operation failed");
       }
 
       // If condition photo was attached, upload it and link to this assignment
       if (photoFile) {
-        const photoFormData = new FormData();
-        photoFormData.append("file", photoFile);
-        photoFormData.append(
-          "category",
-          actionType === "RETURN" ? "RETURN" : "HANDOVER"
-        );
-        photoFormData.append(
-          "description",
+        await uploadAssetPhoto(
+          activeAsset.id,
+          photoFile,
+          actionType === "RETURN" ? "RETURN" : "HANDOVER",
           `Condition documented during ${actionType} (${conditionAtAction})${
             handoverDocRef ? ` Ref: ${handoverDocRef}` : ""
           }`
         );
-        if (data.assignmentId) {
-          photoFormData.append("assignmentId", data.assignmentId);
-        }
-
-        await fetch(`/api/assets/${activeAsset.id}/photos`, {
-          method: "POST",
-          body: photoFormData,
-        });
       }
 
       onSuccess();

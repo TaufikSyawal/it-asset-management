@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { AssetDTO, CompanyDTO, EmployeeDTO, UserRole, AssetCategory, AssetStatus, PhysicalCondition, DepreciationMethod } from "@/types";
 import { ROLE_PERMISSIONS } from "@/lib/permissions";
+import { createAsset, updateAsset } from "@/services/assetService";
 import { X, Save, AlertCircle, Laptop, Cpu, ShieldAlert } from "lucide-react";
 
 interface AssetModalProps {
@@ -116,9 +117,6 @@ export default function AssetModal({
     setError(null);
 
     try {
-      const url = isEditing ? `/api/assets/${assetToEdit.id}` : "/api/assets";
-      const method = isEditing ? "PUT" : "POST";
-
       const payload = {
         ...formData,
         serialNumber: formData.serialNumber.trim() === "" ? null : formData.serialNumber.trim(),
@@ -128,15 +126,12 @@ export default function AssetModal({
         usefulLifeMonths: formData.usefulLifeMonths ? parseInt(formData.usefulLifeMonths, 10) : null,
       };
 
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const result = isEditing && assetToEdit
+        ? await updateAsset(assetToEdit.id, payload)
+        : await createAsset(payload);
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to save asset");
+      if (result.error) {
+        throw new Error(result.error);
       }
 
       onSuccess();

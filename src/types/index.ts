@@ -1,4 +1,4 @@
-export type UserRole = 'SUPER_ADMIN' | 'IT_ADMIN' | 'FINANCE' | 'AUDITOR' | 'EMPLOYEE';
+export type UserRole = 'SUPER_ADMIN' | 'MANAGEMENT' | 'IT_ADMIN' | 'FINANCE' | 'AUDITOR' | 'EMPLOYEE';
 
 export type AssetStatus = 'AVAILABLE' | 'IN_USE' | 'MAINTENANCE' | 'DISPOSED' | 'ARCHIVED' | 'MISSING';
 
@@ -23,6 +23,8 @@ export interface UserSession {
   email: string;
   name: string;
   role: UserRole;
+  allCompanies?: boolean;
+  allowedCompanies?: string[];
   companyId?: string | null;
   employeeId?: string | null;
 }
