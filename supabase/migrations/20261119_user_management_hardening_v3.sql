@@ -1,5 +1,5 @@
 -- ==============================================================================
--- PRODUCTION HARDENING REVISION 6: CENTRALIZED USER MANAGEMENT & RBAC GOVERNANCE
+-- PRODUCTION HARDENING REVISION 7: CENTRALIZED USER MANAGEMENT & RBAC GOVERNANCE
 -- Architecture: Zero-Trust Deny-by-Default, Anti-Privilege Escalation,
 -- Last Super Admin Row-Locking Protection, Non-Cascading Immutable Role Audit Trail,
 -- Complete Removal of SECURITY DEFINER Authorization Bypasses,
@@ -250,48 +250,46 @@ as $$
 declare
   v_caller_role public.user_role;
 begin
-  -- Separate trusted maintenance operations from application authorization
-  if nullif(current_setting('app.maintenance_mode', true), '') = 'on' then
-    return new;
-  end if;
+  -- Validate caller permissions for authenticated application sessions
+  if auth.uid() is not null then
+    v_caller_role := public.get_current_role();
 
-  v_caller_role := public.get_current_role();
+    -- If caller is not an active SUPER_ADMIN:
+    if v_caller_role is distinct from 'SUPER_ADMIN' then
+      -- Non-Super Admins can NEVER modify role
+      if old.role is distinct from new.role then
+        raise exception 'Privilege Escalation Blocked: Only Super Admins can modify user roles.';
+      end if;
 
-  -- If caller is not an active SUPER_ADMIN:
-  if v_caller_role is distinct from 'SUPER_ADMIN' then
-    -- Non-Super Admins can NEVER modify role
-    if old.role is distinct from new.role then
-      raise exception 'Privilege Escalation Blocked: Only Super Admins can modify user roles.';
-    end if;
+      -- Non-Super Admins can NEVER modify company access permissions
+      if old.all_companies is distinct from new.all_companies or old.allowed_companies is distinct from new.allowed_companies then
+        raise exception 'Privilege Escalation Blocked: Only Super Admins can modify company access permissions.';
+      end if;
 
-    -- Non-Super Admins can NEVER modify company access permissions
-    if old.all_companies is distinct from new.all_companies or old.allowed_companies is distinct from new.allowed_companies then
-      raise exception 'Privilege Escalation Blocked: Only Super Admins can modify company access permissions.';
-    end if;
+      -- Non-Super Admins can NEVER activate or deactivate accounts
+      if old.is_active is distinct from new.is_active then
+        raise exception 'Security Violation: Only Super Admins can activate or deactivate user accounts.';
+      end if;
 
-    -- Non-Super Admins can NEVER activate or deactivate accounts
-    if old.is_active is distinct from new.is_active then
-      raise exception 'Security Violation: Only Super Admins can activate or deactivate user accounts.';
-    end if;
+      -- Non-Super Admins can NEVER link or modify employee ID
+      if old.employee_id is distinct from new.employee_id then
+        raise exception 'Privilege Escalation Blocked: Only Super Admins can link or modify employee ID.';
+      end if;
 
-    -- Non-Super Admins can NEVER link or modify employee ID
-    if old.employee_id is distinct from new.employee_id then
-      raise exception 'Privilege Escalation Blocked: Only Super Admins can link or modify employee ID.';
-    end if;
+      -- Non-Super Admins can NEVER change registered email
+      if old.email is distinct from new.email then
+        raise exception 'Security Violation: User email can only be updated through verified authentication procedures.';
+      end if;
 
-    -- Non-Super Admins can NEVER change registered email
-    if old.email is distinct from new.email then
-      raise exception 'Security Violation: User email can only be updated through verified authentication procedures.';
-    end if;
+      -- Non-Super Admins can NEVER change user UUID
+      if old.id is distinct from new.id then
+        raise exception 'Security Violation: Cannot change user identity key.';
+      end if;
 
-    -- Non-Super Admins can NEVER change user UUID
-    if old.id is distinct from new.id then
-      raise exception 'Security Violation: Cannot change user identity key.';
-    end if;
-
-    -- Non-Super Admins cannot modify another user's profile
-    if old.id != auth.uid() then
-      raise exception 'Access Denied: You cannot modify another users profile.';
+      -- Non-Super Admins cannot modify another user's profile
+      if old.id != auth.uid() then
+        raise exception 'Access Denied: You cannot modify another users profile.';
+      end if;
     end if;
   end if;
 
@@ -318,17 +316,11 @@ as $$
 declare
   v_other_admin_count integer;
 begin
-  -- Separate trusted maintenance operations from application authorization
-  if nullif(current_setting('app.maintenance_mode', true), '') = 'on' then
-    return coalesce(new, old);
-  end if;
   -- Handle UPDATE: demotion or deactivation
   if tg_op = 'UPDATE' then
     if old.role = 'SUPER_ADMIN' and old.is_active = true and (new.role != 'SUPER_ADMIN' or new.is_active = false) then
-      -- Exclusively lock all active Super Admin rows to prevent race conditions from concurrent transactions
-      perform 1 from public.user_profiles
-      where role = 'SUPER_ADMIN' and is_active = true
-      for update;
+      -- Transaction-scoped advisory lock serializes concurrent super admin modifications and eliminates deadlocks
+      perform pg_advisory_xact_lock(hashtext('protect_last_super_admin'));
 
       select count(*) into v_other_admin_count
       from public.user_profiles
@@ -346,10 +338,8 @@ begin
   -- Handle DELETE: account deletion
   if tg_op = 'DELETE' then
     if old.role = 'SUPER_ADMIN' and old.is_active = true then
-      -- Exclusively lock all active Super Admin rows to prevent race conditions from concurrent transactions
-      perform 1 from public.user_profiles
-      where role = 'SUPER_ADMIN' and is_active = true
-      for update;
+      -- Transaction-scoped advisory lock serializes concurrent super admin modifications and eliminates deadlocks
+      perform pg_advisory_xact_lock(hashtext('protect_last_super_admin'));
 
       select count(*) into v_other_admin_count
       from public.user_profiles
@@ -613,10 +603,7 @@ begin
     '{}',
     true
   )
-  on conflict (id) do update
-  set
-    email = lower(excluded.email),
-    updated_at = now();
+  on conflict (id) do nothing;
 
   return new;
 end;
@@ -631,12 +618,17 @@ create trigger on_auth_user_created
 -- 9. STRICT LEAST-PRIVILEGE GRANTS & PRIVILEGE HARDENING
 -- ------------------------------------------------------------------------------
 
--- Audit history: authenticated users can only SELECT (audited records)
+-- Table permissions: user_profiles (Direct client INSERT is forbidden; profile creation via trigger/service_role)
+revoke all on public.user_profiles from public, anon;
+revoke insert on public.user_profiles from authenticated, anon;
+grant select, update on public.user_profiles to authenticated;
+
+-- Table permissions: user_role_history (Strictly immutable; client INSERT/UPDATE/DELETE/TRUNCATE forbidden)
 revoke all on public.user_role_history from public, anon;
 revoke insert, update, delete, truncate on public.user_role_history from authenticated;
 grant select on public.user_role_history to authenticated;
 
--- Function execution grants
+-- Explicit function execution grants for authenticated users
 grant execute on function public.get_current_profile() to authenticated;
 grant execute on function public.get_current_role() to authenticated;
 grant execute on function public.can_access_company(text) to authenticated;
@@ -645,5 +637,30 @@ grant execute on function public.can_edit_financials() to authenticated;
 grant execute on function public.can_manage_assets() to authenticated;
 grant execute on function public.can_reconcile_opname() to authenticated;
 grant execute on function public.get_current_employee_id() to authenticated;
+
+-- Operational workflow RPC grants (preserving assignments & stock opname across all schemas)
+do $$ begin
+  grant execute on function public.perform_asset_assignment(text, text, text, public.physical_condition, text, text) to authenticated;
+exception when undefined_function then null; end $$;
+
+do $$ begin
+  grant execute on function public.perform_asset_assignment(text, public.assignment_action, text, public.physical_condition, text, text) to authenticated;
+exception when undefined_function then null; end $$;
+
+do $$ begin
+  grant execute on function public.create_stock_opname_session(text, text, text, text, text) to authenticated;
+exception when undefined_function then null; end $$;
+
+do $$ begin
+  grant execute on function public.record_stock_opname_scan(text, text, text, public.physical_condition, text, text, timestamptz) to authenticated;
+exception when undefined_function then null; end $$;
+
+do $$ begin
+  grant execute on function public.record_stock_opname_scan(text, text, text, public.physical_condition, text, text) to authenticated;
+exception when undefined_function then null; end $$;
+
+do $$ begin
+  grant execute on function public.reconcile_stock_opname(text, text) to authenticated;
+exception when undefined_function then null; end $$;
 
 commit;

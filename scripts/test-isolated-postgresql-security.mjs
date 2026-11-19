@@ -104,57 +104,39 @@ async function main() {
   // 8. Unprofiled:  88888888-8888-8888-8888-888888888888 (in auth.users, NO user_profiles row)
 
   runPsql(`
-    set app.maintenance_mode = 'on';
-    delete from public.user_role_history;
-    delete from public.user_profiles;
     delete from auth.users;
 
-    -- Super Admin (Only 1 active Super Admin initially)
+    -- Super Admin
     insert into auth.users (id, email) values ('11111111-1111-1111-1111-111111111111', 'superadmin@test.local');
-    insert into public.user_profiles (id, email, name, role, all_companies, allowed_companies, is_active)
-    values ('11111111-1111-1111-1111-111111111111', 'superadmin@test.local', 'Super Admin Test', 'SUPER_ADMIN', true, '{}', true)
-    on conflict (id) do update set name = excluded.name, role = excluded.role, all_companies = excluded.all_companies, allowed_companies = excluded.allowed_companies, is_active = excluded.is_active;
+    update public.user_profiles set name = 'Super Admin Test', role = 'SUPER_ADMIN', all_companies = true, is_active = true where id = '11111111-1111-1111-1111-111111111111';
 
     -- Management
     insert into auth.users (id, email) values ('22222222-2222-2222-2222-222222222222', 'management@test.local');
-    insert into public.user_profiles (id, email, name, role, all_companies, allowed_companies, is_active)
-    values ('22222222-2222-2222-2222-222222222222', 'management@test.local', 'Executive Mgmt', 'MANAGEMENT', true, '{}', true)
-    on conflict (id) do update set name = excluded.name, role = excluded.role, all_companies = excluded.all_companies, allowed_companies = excluded.allowed_companies, is_active = excluded.is_active;
+    update public.user_profiles set name = 'Executive Mgmt', role = 'MANAGEMENT', all_companies = true, is_active = true where id = '22222222-2222-2222-2222-222222222222';
 
     -- IT Admin (GMD, GMC)
     insert into auth.users (id, email) values ('33333333-3333-3333-3333-333333333333', 'itadmin@test.local');
-    insert into public.user_profiles (id, email, name, role, all_companies, allowed_companies, is_active)
-    values ('33333333-3333-3333-3333-333333333333', 'itadmin@test.local', 'IT Admin GMD GMC', 'IT_ADMIN', false, '{GMD,GMC}', true)
-    on conflict (id) do update set name = excluded.name, role = excluded.role, all_companies = excluded.all_companies, allowed_companies = excluded.allowed_companies, is_active = excluded.is_active;
+    update public.user_profiles set name = 'IT Admin GMD GMC', role = 'IT_ADMIN', all_companies = false, allowed_companies = '{GMD,GMC}', is_active = true where id = '33333333-3333-3333-3333-333333333333';
 
     -- Finance
     insert into auth.users (id, email) values ('44444444-4444-4444-4444-444444444444', 'finance@test.local');
-    insert into public.user_profiles (id, email, name, role, all_companies, allowed_companies, is_active)
-    values ('44444444-4444-4444-4444-444444444444', 'finance@test.local', 'Finance Officer', 'FINANCE', true, '{}', true)
-    on conflict (id) do update set name = excluded.name, role = excluded.role, all_companies = excluded.all_companies, allowed_companies = excluded.allowed_companies, is_active = excluded.is_active;
+    update public.user_profiles set name = 'Finance Officer', role = 'FINANCE', all_companies = true, is_active = true where id = '44444444-4444-4444-4444-444444444444';
 
     -- Auditor (TEL)
     insert into auth.users (id, email) values ('55555555-5555-5555-5555-555555555555', 'auditor@test.local');
-    insert into public.user_profiles (id, email, name, role, all_companies, allowed_companies, is_active)
-    values ('55555555-5555-5555-5555-555555555555', 'auditor@test.local', 'Auditor TEL', 'AUDITOR', false, '{TEL}', true)
-    on conflict (id) do update set name = excluded.name, role = excluded.role, all_companies = excluded.all_companies, allowed_companies = excluded.allowed_companies, is_active = excluded.is_active;
+    update public.user_profiles set name = 'Auditor TEL', role = 'AUDITOR', all_companies = false, allowed_companies = '{TEL}', is_active = true where id = '55555555-5555-5555-5555-555555555555';
 
     -- Employee (RCI)
     insert into auth.users (id, email) values ('66666666-6666-6666-6666-666666666666', 'employee@test.local');
-    insert into public.user_profiles (id, email, name, role, all_companies, allowed_companies, is_active)
-    values ('66666666-6666-6666-6666-666666666666', 'employee@test.local', 'Standard Employee', 'EMPLOYEE', false, '{RCI}', true)
-    on conflict (id) do update set name = excluded.name, role = excluded.role, all_companies = excluded.all_companies, allowed_companies = excluded.allowed_companies, is_active = excluded.is_active;
+    update public.user_profiles set name = 'Standard Employee', role = 'EMPLOYEE', all_companies = false, allowed_companies = '{RCI}', is_active = true where id = '66666666-6666-6666-6666-666666666666';
 
     -- Deactivated User
     insert into auth.users (id, email) values ('77777777-7777-7777-7777-777777777777', 'deactivated@test.local');
-    insert into public.user_profiles (id, email, name, role, all_companies, allowed_companies, is_active)
-    values ('77777777-7777-7777-7777-777777777777', 'deactivated@test.local', 'Deactivated Account', 'SUPER_ADMIN', true, '{}', false)
-    on conflict (id) do update set name = excluded.name, role = excluded.role, all_companies = excluded.all_companies, allowed_companies = excluded.allowed_companies, is_active = excluded.is_active;
+    update public.user_profiles set name = 'Deactivated Account', role = 'SUPER_ADMIN', all_companies = true, is_active = false where id = '77777777-7777-7777-7777-777777777777';
 
     -- Unprofiled User (in auth.users, NO user_profiles row)
     insert into auth.users (id, email) values ('88888888-8888-8888-8888-888888888888', 'unprofiled@test.local');
     delete from public.user_profiles where id = '88888888-8888-8888-8888-888888888888';
-    reset app.maintenance_mode;
   `);
 
   console.log('✓ Seeding complete. All 6 personas, 4 companies, 1 deactivated user, and 1 unprofiled user created.\n');

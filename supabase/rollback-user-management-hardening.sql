@@ -1,5 +1,5 @@
 -- ==============================================================================
--- ROLLBACK SCRIPT: CENTRALIZED USER MANAGEMENT & RBAC GOVERNANCE (REV 6)
+-- ROLLBACK SCRIPT: CENTRALIZED USER MANAGEMENT & RBAC GOVERNANCE (REV 7)
 -- Purpose: Safely rolls back User Management triggers, anti-escalation rules,
 -- and audit trail policies to the pre-migration baseline.
 -- Target: Supabase PostgreSQL (dhwtybzvkhcsqzrtgohn)
@@ -52,6 +52,46 @@ drop policy if exists "Super Admins can view all role history" on public.user_ro
 drop policy if exists "Role history insert is forbidden for application users" on public.user_role_history;
 drop policy if exists "Role history is immutable (no update)" on public.user_role_history;
 drop policy if exists "Role history is immutable (no delete)" on public.user_role_history;
+
+-- 5. SECURE NEW USER TRIGGER (ZERO-TRUST EMPLOYEE BASELINE, STRICTLY NO AUTOMATIC SUPER ADMIN PROVISIONING)
+create or replace function public.handle_new_auth_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_name text;
+begin
+  v_name := coalesce(new.raw_user_meta_data->>'name', split_part(new.email, '@', 1));
+
+  insert into public.user_profiles (
+    id,
+    email,
+    name,
+    role,
+    all_companies,
+    allowed_companies,
+    is_active
+  ) values (
+    new.id,
+    new.email,
+    v_name,
+    'EMPLOYEE'::public.user_role,
+    false,
+    '{}'::text[],
+    true
+  )
+  on conflict (id) do nothing;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_auth_user();
 
 -- Note: Table public.user_role_history and column is_active are preserved to prevent data loss.
 

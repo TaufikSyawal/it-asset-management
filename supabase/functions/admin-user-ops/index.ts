@@ -230,8 +230,8 @@ serve(async (req: Request) => {
           }
         }
 
-        // Transactional consistency: Update database profile first
-        const { error: updateError } = await adminClient
+        // Transactional consistency: Update database profile as authenticated Super Admin caller
+        const { error: updateError } = await callerClient
           .from("user_profiles")
           .update({ is_active: targetActive, updated_at: new Date().toISOString() })
           .eq("id", userId);
@@ -251,7 +251,7 @@ serve(async (req: Request) => {
 
         if (banError) {
           // Revert profile status if Auth ban update fails to prevent inconsistent state
-          await adminClient.from("user_profiles").update({ is_active: !targetActive }).eq("id", userId);
+          await callerClient.from("user_profiles").update({ is_active: !targetActive }).eq("id", userId);
           return new Response(
             JSON.stringify({ error: "Failed to update authentication account ban status: " + banError.message }),
             { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -301,8 +301,8 @@ serve(async (req: Request) => {
           }
         }
 
-        // Delete from user_profiles first, then auth.users
-        const { error: profileDeleteError } = await adminClient.from("user_profiles").delete().eq("id", userId);
+        // Delete from user_profiles as authenticated Super Admin caller, then auth.users
+        const { error: profileDeleteError } = await callerClient.from("user_profiles").delete().eq("id", userId);
         if (profileDeleteError) {
           return new Response(
             JSON.stringify({ error: "Failed to delete user profile: " + profileDeleteError.message }),
