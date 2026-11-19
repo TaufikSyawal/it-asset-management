@@ -75,8 +75,10 @@ export async function signOut(): Promise<void> {
  * Resilient against temporary network drops and database glitches:
  * if an active Supabase Auth session exists, falls back to cached profile
  * to NEVER log the user out due to a transient database query failure.
+ * When forceRefresh is true, queries the database directly to ensure
+ * up-to-date roles and multi-company scopes.
  */
-export async function getUserProfile(userId?: string): Promise<UserSession | null> {
+export async function getUserProfile(userId?: string, forceRefresh: boolean = false): Promise<UserSession | null> {
   if (!isSupabaseConfigured()) {
     return null;
   }
@@ -96,18 +98,30 @@ export async function getUserProfile(userId?: string): Promise<UserSession | nul
       targetId = session.user.id;
     }
 
+    // Try fetching latest profile from database
     const { data, error } = await supabase
       .from("user_profiles")
-      .select("id, email, name, role, all_companies, allowed_companies, employee_id")
+      .select("id, email, name, role, all_companies, allowed_companies, employee_id, is_active")
       .eq("id", targetId)
       .single();
 
     if (error || !data) {
-      console.warn("Could not retrieve user profile from DB, falling back to cache:", error?.message);
-      const cached = memoryProfile || getStoredProfile();
-      if (cached && cached.id === targetId) {
-        return cached;
+      console.warn("Could not retrieve user profile from DB, checking cache:", error?.message);
+      if (!forceRefresh) {
+        const cached = memoryProfile || getStoredProfile();
+        if (cached && cached.id === targetId) {
+          return cached;
+        }
       }
+      return null;
+    }
+
+    // Immediate deactivation enforcement: if is_active is explicitly false, terminate session
+    if (data.is_active === false) {
+      console.warn(`User account ${data.email} is deactivated. Revoking session access immediately.`);
+      memoryProfile = null;
+      setStoredProfile(null);
+      await signOut();
       return null;
     }
 
@@ -116,9 +130,10 @@ export async function getUserProfile(userId?: string): Promise<UserSession | nul
       email: data.email,
       name: data.name,
       role: data.role as UserRole,
-      allCompanies: data.all_companies,
+      allCompanies: data.all_companies || false,
       allowedCompanies: data.allowed_companies || [],
       employeeId: data.employee_id,
+      isActive: true,
     };
 
     memoryProfile = profile;
@@ -126,10 +141,19 @@ export async function getUserProfile(userId?: string): Promise<UserSession | nul
     return profile;
   } catch (err) {
     console.error("Error fetching user profile:", err);
-    const cached = memoryProfile || getStoredProfile();
-    if (cached) return cached;
+    if (!forceRefresh) {
+      const cached = memoryProfile || getStoredProfile();
+      if (cached) return cached;
+    }
     return null;
   }
+}
+
+/**
+ * Force refresh the active user profile from database to eliminate stale cache
+ */
+export async function refreshCurrentSession(): Promise<UserSession | null> {
+  return getUserProfile(undefined, true);
 }
 
 /**

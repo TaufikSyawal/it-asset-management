@@ -388,7 +388,7 @@ $$;
 -- 5. SECURE DATABASE VIEWS (WITH security_invoker = true)
 
 -- Masked Assets View preventing direct API financial leaks
-create or replace view public.assets_view as
+create or replace view public.assets_view with (security_invoker = true) as
 select
   a.id,
   a.asset_tag,

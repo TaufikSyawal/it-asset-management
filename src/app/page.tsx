@@ -555,6 +555,8 @@ export default function AppShell() {
               onRoleChange={handleRoleChange}
               companies={companies}
               onRefreshCompanies={fetchMetadata}
+              employees={employees}
+              currentUser={authenticatedUser}
             />
           )}
         </main>

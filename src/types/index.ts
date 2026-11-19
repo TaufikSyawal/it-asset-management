@@ -27,6 +27,43 @@ export interface UserSession {
   allowedCompanies?: string[];
   companyId?: string | null;
   employeeId?: string | null;
+  isActive?: boolean;
+}
+
+export interface UserProfileDTO {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  allCompanies: boolean;
+  allowedCompanies: string[];
+  employeeId?: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  employee?: {
+    id: string;
+    employeeId: string;
+    name: string;
+    department?: string | null;
+  } | null;
+}
+
+export interface UserRoleHistoryDTO {
+  id: string;
+  userId: string;
+  changedBy?: string | null;
+  changedByName?: string | null;
+  oldRole?: UserRole | null;
+  newRole: UserRole;
+  oldAllCompanies?: boolean | null;
+  newAllCompanies: boolean;
+  oldAllowedCompanies?: string[] | null;
+  newAllowedCompanies: string[];
+  oldIsActive?: boolean | null;
+  newIsActive: boolean;
+  notes?: string | null;
+  createdAt: string;
 }
 
 export interface CompanyDTO {

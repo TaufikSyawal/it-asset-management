@@ -17,7 +17,8 @@
     "test:photos": "node test-photos.mjs",
     "test:drawer": "node test-drawer-presentation.mjs",
     "test:security": "ts-node -O '{\"module\":\"commonjs\"}' test-supabase-security.ts",
-    "test:all": "node test-e2e.mjs && node test-phase2.mjs && node test-print-layout.mjs && node test-photos.mjs && node test-drawer-presentation.mjs && npm run test:security"
+    "test:users": "ts-node -O '{\"module\":\"commonjs\"}' test-user-management.ts",
+    "test:all": "node test-e2e.mjs && node test-phase2.mjs && node test-print-layout.mjs && node test-photos.mjs && node test-drawer-presentation.mjs && npm run test:security && npm run test:users"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
