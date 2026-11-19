@@ -210,5 +210,5 @@ as $$
   );
 $$;
 
-grant select, insert, update on public.user_role_history to authenticated;
+grant select, insert on public.user_role_history to authenticated;
 
