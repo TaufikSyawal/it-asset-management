@@ -8,10 +8,13 @@ import {
   CompanyDTO,
   EmployeeDTO,
   UserSession,
+  ApprovalStatus,
 } from "@/types";
 import {
   getUsers,
   updateUserProfile,
+  approveUser,
+  rejectUser,
   inviteUser,
   resetUserPassword,
   getUserRoleHistory,
@@ -34,8 +37,10 @@ import {
   AlertTriangle,
   AlertCircle,
   X,
+  XCircle,
   ChevronRight,
   Lock,
+  Clock,
 } from "lucide-react";
 
 interface UserManagementProps {
@@ -92,6 +97,7 @@ export default function UserManagement({
   const [editAllowedCompanies, setEditAllowedCompanies] = useState<string[]>([]);
   const [editEmployeeId, setEditEmployeeId] = useState<string>("");
   const [editIsActive, setEditIsActive] = useState(true);
+  const [editApprovalStatus, setEditApprovalStatus] = useState<ApprovalStatus>("APPROVED");
   const [savingEdit, setSavingEdit] = useState(false);
 
   // Invite User State
@@ -132,11 +138,16 @@ export default function UserManagement({
     }, 4000);
   };
 
+  // Pending approval counter
+  const pendingCount = users.filter((u) => u.approvalStatus === "PENDING").length;
+
   // Filtered directory
   const filteredUsers = users.filter((u) => {
     if (roleFilter !== "ALL" && u.role !== roleFilter) return false;
-    if (statusFilter === "ACTIVE" && !u.isActive) return false;
-    if (statusFilter === "DEACTIVATED" && u.isActive) return false;
+    if (statusFilter === "PENDING" && u.approvalStatus !== "PENDING") return false;
+    if (statusFilter === "ACTIVE" && (!u.isActive || u.approvalStatus === "PENDING" || u.approvalStatus === "REJECTED")) return false;
+    if (statusFilter === "DEACTIVATED" && (u.isActive || u.approvalStatus === "PENDING" || u.approvalStatus === "REJECTED")) return false;
+    if (statusFilter === "REJECTED" && u.approvalStatus !== "REJECTED") return false;
     if (!search) return true;
     const q = search.toLowerCase();
     return (
@@ -157,6 +168,7 @@ export default function UserManagement({
     setEditAllowedCompanies([...user.allowedCompanies]);
     setEditEmployeeId(user.employeeId || "");
     setEditIsActive(user.isActive);
+    setEditApprovalStatus(user.approvalStatus || "APPROVED");
     setIsEditModalOpen(true);
   };
 
@@ -165,9 +177,9 @@ export default function UserManagement({
     if (!editingUser) return;
 
     // Safety: check last super admin
-    if (editingUser.role === "SUPER_ADMIN" && (editRole !== "SUPER_ADMIN" || !editIsActive)) {
+    if (editingUser.role === "SUPER_ADMIN" && (editRole !== "SUPER_ADMIN" || !editIsActive || editApprovalStatus !== "APPROVED")) {
       if (activeSuperAdminCount <= 1) {
-        alert("Operation denied: Cannot demote or deactivate the last remaining Super Admin account.");
+        alert("Operation denied: Cannot demote, deactivate, or unapprove the last remaining Super Admin account.");
         return;
       }
     }
@@ -182,7 +194,8 @@ export default function UserManagement({
           allCompanies: editAllCompanies,
           allowedCompanies: editAllCompanies ? [] : editAllowedCompanies,
           employeeId: editEmployeeId || null,
-          isActive: editIsActive,
+          isActive: editApprovalStatus === "REJECTED" ? false : editIsActive,
+          approvalStatus: editApprovalStatus,
         },
         currentUser?.id
       );
@@ -200,6 +213,53 @@ export default function UserManagement({
       alert(err.message || "Failed to save profile changes.");
     } finally {
       setSavingEdit(false);
+    }
+  };
+
+  // Quick Approve Registration
+  const handleQuickApprove = async (user: UserProfileDTO) => {
+    const confirm = window.confirm(
+      `Approve account registration for ${user.name} (${user.email})?\n\nThey will receive the EMPLOYEE role with zero company data access until entities are assigned.`
+    );
+    if (!confirm) return;
+
+    try {
+      const res = await approveUser(
+        user.id,
+        {
+          role: user.role || "EMPLOYEE",
+          allCompanies: user.allCompanies || false,
+          allowedCompanies: user.allowedCompanies || [],
+          employeeId: user.employeeId || null,
+        },
+        currentUser?.id
+      );
+      if (!res.success) throw new Error(res.error || "Failed to approve user.");
+      setActionSuccess(`Registration for ${user.email} approved successfully.`);
+      await fetchUserDirectory();
+      if (onRefreshMetadata) onRefreshMetadata();
+      clearNotifications();
+    } catch (err: any) {
+      alert(`Approval error: ${err.message}`);
+    }
+  };
+
+  // Quick Reject Registration
+  const handleQuickReject = async (user: UserProfileDTO) => {
+    const confirm = window.confirm(
+      `Reject registration for ${user.name} (${user.email})?\n\nThis account will be blocked from accessing the IT Asset Management System.`
+    );
+    if (!confirm) return;
+
+    try {
+      const res = await rejectUser(user.id, currentUser?.id);
+      if (!res.success) throw new Error(res.error || "Failed to reject user.");
+      setActionSuccess(`Registration for ${user.email} has been rejected.`);
+      await fetchUserDirectory();
+      if (onRefreshMetadata) onRefreshMetadata();
+      clearNotifications();
+    } catch (err: any) {
+      alert(`Rejection error: ${err.message}`);
     }
   };
 
@@ -338,6 +398,29 @@ export default function UserManagement({
         </div>
       )}
 
+      {/* Pending Registrations Attention Banner */}
+      {pendingCount > 0 && statusFilter !== "PENDING" && (
+        <div className="p-3.5 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 text-amber-900 rounded-xl text-xs flex items-center justify-between shadow-2xs">
+          <div className="flex items-center gap-2.5">
+            <Clock className="w-4 h-4 text-amber-600 shrink-0 animate-pulse" />
+            <div>
+              <span className="font-bold text-slate-900">
+                {pendingCount} Registration{pendingCount > 1 ? "s" : ""} Awaiting Review:
+              </span>
+              <span className="text-slate-600 ml-1">
+                New accounts cannot view company data or assets until approved and assigned company scopes.
+              </span>
+            </div>
+          </div>
+          <button
+            onClick={() => setStatusFilter("PENDING")}
+            className="px-3 py-1 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white rounded-lg text-xs font-semibold shrink-0 transition-colors shadow-2xs cursor-pointer"
+          >
+            Review ({pendingCount})
+          </button>
+        </div>
+      )}
+
       {/* Directory Header Card */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
@@ -415,9 +498,15 @@ export default function UserManagement({
               onChange={(e) => setStatusFilter(e.target.value)}
               className="px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-hidden focus:ring-2 focus:ring-brand-500 shadow-2xs cursor-pointer"
             >
-              <option value="ALL">All Statuses</option>
+              <option value="ALL">All Statuses ({users.length})</option>
+              {pendingCount > 0 && (
+                <option value="PENDING" className="font-bold text-amber-700">
+                  ⚠️ Pending Approval ({pendingCount})
+                </option>
+              )}
               <option value="ACTIVE">Active Only</option>
               <option value="DEACTIVATED">Deactivated Only</option>
+              <option value="REJECTED">Rejected Only</option>
             </select>
           </div>
 
@@ -528,7 +617,17 @@ export default function UserManagement({
 
                       {/* Status */}
                       <td className="py-3 px-3">
-                        {user.isActive ? (
+                        {user.approvalStatus === "PENDING" ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                            <Clock className="w-3 h-3 text-amber-600 animate-pulse shrink-0" />
+                            <span>Pending</span>
+                          </span>
+                        ) : user.approvalStatus === "REJECTED" ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-50 text-rose-800 border border-rose-200">
+                            <XCircle className="w-3 h-3 text-rose-600 shrink-0" />
+                            <span>Rejected</span>
+                          </span>
+                        ) : user.isActive ? (
                           <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                             <span>Active</span>
@@ -558,17 +657,38 @@ export default function UserManagement({
                       {/* Actions */}
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          {user.approvalStatus === "PENDING" && (
+                            <>
+                              <button
+                                onClick={() => handleQuickApprove(user)}
+                                className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                                title="Approve registration (grant access)"
+                              >
+                                <UserCheck className="w-3 h-3" />
+                                <span>Approve</span>
+                              </button>
+                              <button
+                                onClick={() => handleQuickReject(user)}
+                                className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                                title="Reject registration"
+                              >
+                                <UserX className="w-3 h-3 text-rose-600" />
+                                <span>Reject</span>
+                              </button>
+                            </>
+                          )}
+
                           <button
                             onClick={() => handleOpenEdit(user)}
-                            className="p-1.5 text-slate-500 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
-                            title="Edit role and company permissions"
+                            className="p-1.5 text-slate-500 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors cursor-pointer"
+                            title="Edit role, company scopes, and approval status"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
 
                           <button
                             onClick={() => handleResetPassword(user)}
-                            className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+                            className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
                             title="Generate password reset link"
                           >
                             <KeyRound className="w-3.5 h-3.5" />
@@ -576,24 +696,26 @@ export default function UserManagement({
 
                           <button
                             onClick={() => handleOpenHistory(user)}
-                            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                            className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
                             title="View role and permission change history"
                           >
                             <History className="w-3.5 h-3.5" />
                           </button>
 
-                          <button
-                            onClick={() => handleToggleActive(user)}
-                            disabled={user.role === "SUPER_ADMIN" && activeSuperAdminCount <= 1 && user.isActive}
-                            className={`p-1.5 rounded-lg transition-colors ${
-                              user.isActive
-                                ? "text-slate-400 hover:text-rose-600 hover:bg-rose-50"
-                                : "text-emerald-600 hover:bg-emerald-50"
-                            } disabled:opacity-30 disabled:cursor-not-allowed`}
-                            title={user.isActive ? "Deactivate account" : "Activate account"}
-                          >
-                            {user.isActive ? <UserX className="w-3.5 h-3.5" /> : <UserCheck className="w-3.5 h-3.5" />}
-                          </button>
+                          {user.approvalStatus !== "PENDING" && (
+                            <button
+                              onClick={() => handleToggleActive(user)}
+                              disabled={user.role === "SUPER_ADMIN" && activeSuperAdminCount <= 1 && user.isActive}
+                              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                user.isActive
+                                  ? "text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                                  : "text-emerald-600 hover:bg-emerald-50"
+                              } disabled:opacity-30 disabled:cursor-not-allowed`}
+                              title={user.isActive ? "Deactivate account" : "Activate account"}
+                            >
+                              {user.isActive ? <UserX className="w-3.5 h-3.5" /> : <UserCheck className="w-3.5 h-3.5" />}
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -740,6 +862,47 @@ export default function UserManagement({
                     </option>
                   ))}
                 </select>
+              </div>
+
+              {/* Registration Approval Status */}
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Registration Approval Status
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["APPROVED", "PENDING", "REJECTED"] as ApprovalStatus[]).map((status) => (
+                    <button
+                      key={status}
+                      type="button"
+                      disabled={editingUser.role === "SUPER_ADMIN" && activeSuperAdminCount <= 1 && status !== "APPROVED"}
+                      onClick={() => {
+                        setEditApprovalStatus(status);
+                        if (status === "REJECTED") {
+                          setEditIsActive(false);
+                        } else if (status === "APPROVED" && !editIsActive) {
+                          setEditIsActive(true);
+                        }
+                      }}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold border transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
+                        editApprovalStatus === status
+                          ? status === "APPROVED"
+                            ? "bg-emerald-50 border-emerald-300 text-emerald-800 ring-2 ring-emerald-500/20"
+                            : status === "PENDING"
+                            ? "bg-amber-50 border-amber-300 text-amber-800 ring-2 ring-amber-500/20"
+                            : "bg-rose-50 border-rose-300 text-rose-800 ring-2 ring-rose-500/20"
+                          : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                      } disabled:opacity-40 disabled:cursor-not-allowed`}
+                    >
+                      {status === "APPROVED" && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
+                      {status === "PENDING" && <Clock className="w-3.5 h-3.5 text-amber-600" />}
+                      {status === "REJECTED" && <XCircle className="w-3.5 h-3.5 text-rose-600" />}
+                      <span>{status === "APPROVED" ? "Approved" : status === "PENDING" ? "Pending" : "Rejected"}</span>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Only Approved accounts can authenticate and access authorized company data.
+                </p>
               </div>
 
               {/* Active Account Status */}

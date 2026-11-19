@@ -17,6 +17,11 @@ begin;
 alter table public.user_profiles add column if not exists is_active boolean not null default true;
 create index if not exists idx_user_profiles_is_active on public.user_profiles(is_active);
 
+-- Ensure registration approval status column exists on user_profiles
+-- Existing accounts default to 'APPROVED' so existing users (e.g. Super Admin) are never locked out
+alter table public.user_profiles add column if not exists approval_status text not null default 'APPROVED' check (approval_status in ('PENDING', 'APPROVED', 'REJECTED'));
+create index if not exists idx_user_profiles_approval_status on public.user_profiles(approval_status);
+
 -- Ensure company active status column exists on companies
 alter table public.companies add column if not exists is_active boolean not null default true;
 
@@ -40,11 +45,17 @@ create table if not exists public.user_role_history (
   new_allowed_companies text[],
   old_is_active boolean,
   new_is_active boolean,
+  old_approval_status text,
+  new_approval_status text,
   old_employee_id text,
   new_employee_id text,
   notes text,
   created_at timestamptz not null default timezone('utc'::text, now())
 );
+
+-- Ensure approval status columns exist in case table was created earlier
+alter table public.user_role_history add column if not exists old_approval_status text;
+alter table public.user_role_history add column if not exists new_approval_status text;
 
 create index if not exists idx_user_role_history_user on public.user_role_history(user_id);
 create index if not exists idx_user_role_history_created on public.user_role_history(created_at desc);
@@ -102,10 +113,10 @@ set search_path = public, pg_temp
 stable
 as $$
   select * from public.user_profiles
-  where id = auth.uid() and is_active = true;
+  where id = auth.uid() and is_active = true and approval_status = 'APPROVED';
 $$;
 
--- 3.2 Resolve active user role (Returns NULL for unauthenticated, unprofiled, or deactivated users)
+-- 3.2 Resolve active user role (Returns NULL for unauthenticated, unprofiled, unapproved, or deactivated users)
 create or replace function public.get_current_role()
 returns public.user_role
 language sql
@@ -115,11 +126,11 @@ stable
 as $$
   select case 
     when auth.uid() is null then null
-    else (select role from public.user_profiles where id = auth.uid() and is_active = true)
+    else (select role from public.user_profiles where id = auth.uid() and is_active = true and approval_status = 'APPROVED')
   end;
 $$;
 
--- 3.3 Validate multi-company access (Strict: Returns FALSE for null auth.uid(), null company, or deactivated account)
+-- 3.3 Validate multi-company access (Strict: Returns FALSE for null auth.uid(), null company, unapproved, or deactivated account)
 create or replace function public.can_access_company(target_company_id text)
 returns boolean
 language sql
@@ -134,6 +145,7 @@ as $$
       join public.companies c on c.id = target_company_id
       where up.id = auth.uid()
         and up.is_active = true
+        and up.approval_status = 'APPROVED'
         and up.role is not null
         and c.is_active = true
         and (
@@ -159,6 +171,7 @@ as $$
       select 1 from public.user_profiles
       where id = auth.uid()
         and is_active = true
+        and approval_status = 'APPROVED'
         and role in ('SUPER_ADMIN', 'MANAGEMENT', 'FINANCE')
     )
   end;
@@ -178,6 +191,7 @@ as $$
       select 1 from public.user_profiles
       where id = auth.uid()
         and is_active = true
+        and approval_status = 'APPROVED'
         and role in ('SUPER_ADMIN', 'FINANCE')
     )
   end;
@@ -197,6 +211,7 @@ as $$
       select 1 from public.user_profiles
       where id = auth.uid()
         and is_active = true
+        and approval_status = 'APPROVED'
         and role in ('SUPER_ADMIN', 'IT_ADMIN')
     )
   end;
@@ -216,6 +231,7 @@ as $$
       select 1 from public.user_profiles
       where id = auth.uid()
         and is_active = true
+        and approval_status = 'APPROVED'
         and role in ('SUPER_ADMIN', 'IT_ADMIN', 'AUDITOR')
     )
   end;
@@ -231,7 +247,7 @@ stable
 as $$
   select case 
     when auth.uid() is null then null
-    else (select employee_id from public.user_profiles where id = auth.uid() and is_active = true)
+    else (select employee_id from public.user_profiles where id = auth.uid() and is_active = true and approval_status = 'APPROVED')
   end;
 $$;
 
@@ -269,6 +285,11 @@ begin
       -- Non-Super Admins can NEVER activate or deactivate accounts
       if old.is_active is distinct from new.is_active then
         raise exception 'Security Violation: Only Super Admins can activate or deactivate user accounts.';
+      end if;
+
+      -- Non-Super Admins can NEVER modify approval status
+      if old.approval_status is distinct from new.approval_status then
+        raise exception 'Privilege Escalation Blocked: Only Super Admins can approve or reject user registrations.';
       end if;
 
       -- Non-Super Admins can NEVER link or modify employee ID
@@ -316,9 +337,10 @@ as $$
 declare
   v_other_admin_count integer;
 begin
-  -- Handle UPDATE: demotion or deactivation
+  -- Handle UPDATE: demotion, deactivation, or unapproval
   if tg_op = 'UPDATE' then
-    if old.role = 'SUPER_ADMIN' and old.is_active = true and (new.role != 'SUPER_ADMIN' or new.is_active = false) then
+    if old.role = 'SUPER_ADMIN' and old.is_active = true and old.approval_status = 'APPROVED'
+       and (new.role != 'SUPER_ADMIN' or new.is_active = false or new.approval_status != 'APPROVED') then
       -- Transaction-scoped advisory lock serializes concurrent super admin modifications and eliminates deadlocks
       perform pg_advisory_xact_lock(hashtext('protect_last_super_admin'));
 
@@ -326,10 +348,11 @@ begin
       from public.user_profiles
       where role = 'SUPER_ADMIN'
         and is_active = true
+        and approval_status = 'APPROVED'
         and id != old.id;
 
       if v_other_admin_count = 0 then
-        raise exception 'Security Protection: Cannot demote or deactivate the last remaining active Super Admin account.';
+        raise exception 'Security Protection: Cannot demote, deactivate, or unapprove the last remaining active Super Admin account.';
       end if;
     end if;
     return new;
@@ -337,7 +360,7 @@ begin
 
   -- Handle DELETE: account deletion
   if tg_op = 'DELETE' then
-    if old.role = 'SUPER_ADMIN' and old.is_active = true then
+    if old.role = 'SUPER_ADMIN' and old.is_active = true and old.approval_status = 'APPROVED' then
       -- Transaction-scoped advisory lock serializes concurrent super admin modifications and eliminates deadlocks
       perform pg_advisory_xact_lock(hashtext('protect_last_super_admin'));
 
@@ -345,6 +368,7 @@ begin
       from public.user_profiles
       where role = 'SUPER_ADMIN'
         and is_active = true
+        and approval_status = 'APPROVED'
         and id != old.id;
 
       if v_other_admin_count = 0 then
@@ -392,6 +416,7 @@ begin
     new_all_companies,
     new_allowed_companies,
     new_is_active,
+    new_approval_status,
     new_employee_id,
     notes
   ) values (
@@ -404,8 +429,9 @@ begin
     new.all_companies,
     new.allowed_companies,
     new.is_active,
+    new.approval_status,
     new.employee_id,
-    'User account created with initial EMPLOYEE role'
+    case when new.approval_status = 'PENDING' then 'User registered (Pending Super Admin Approval)' else 'User account created with initial EMPLOYEE role' end
   );
   return new;
 end;
@@ -430,6 +456,7 @@ begin
      or old.all_companies is distinct from new.all_companies
      or old.allowed_companies is distinct from new.allowed_companies
      or old.is_active is distinct from new.is_active
+     or old.approval_status is distinct from new.approval_status
      or old.employee_id is distinct from new.employee_id then
 
     select coalesce(name, email, 'Super Admin') into v_caller_name
@@ -450,6 +477,8 @@ begin
       new_allowed_companies,
       old_is_active,
       new_is_active,
+      old_approval_status,
+      new_approval_status,
       old_employee_id,
       new_employee_id,
       notes
@@ -467,9 +496,14 @@ begin
       new.allowed_companies,
       old.is_active,
       new.is_active,
+      old.approval_status,
+      new.approval_status,
       old.employee_id,
       new.employee_id,
-      'Administrative profile changes recorded'
+      case 
+        when old.approval_status is distinct from new.approval_status then 'Registration status updated to ' || new.approval_status
+        else 'Administrative profile changes recorded'
+      end
     );
   end if;
   return new;
@@ -505,6 +539,7 @@ begin
     old_all_companies,
     old_allowed_companies,
     old_is_active,
+    old_approval_status,
     old_employee_id,
     notes
   ) values (
@@ -517,6 +552,7 @@ begin
     old.all_companies,
     old.allowed_companies,
     old.is_active,
+    old.approval_status,
     old.employee_id,
     'User account deleted'
   );
@@ -593,7 +629,8 @@ begin
     role,
     all_companies,
     allowed_companies,
-    is_active
+    is_active,
+    approval_status
   ) values (
     new.id,
     lower(new.email),
@@ -601,7 +638,8 @@ begin
     'EMPLOYEE'::public.user_role,
     false,
     '{}',
-    true
+    true,
+    'PENDING'
   )
   on conflict (id) do nothing;
 

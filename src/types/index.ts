@@ -1,5 +1,7 @@
 export type UserRole = 'SUPER_ADMIN' | 'MANAGEMENT' | 'IT_ADMIN' | 'FINANCE' | 'AUDITOR' | 'EMPLOYEE';
 
+export type ApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
 export type AssetStatus = 'AVAILABLE' | 'IN_USE' | 'MAINTENANCE' | 'DISPOSED' | 'ARCHIVED' | 'MISSING';
 
 export type PhysicalCondition = 'EXCELLENT' | 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED';
@@ -28,6 +30,7 @@ export interface UserSession {
   companyId?: string | null;
   employeeId?: string | null;
   isActive?: boolean;
+  approvalStatus?: ApprovalStatus;
 }
 
 export interface UserProfileDTO {
@@ -39,6 +42,7 @@ export interface UserProfileDTO {
   allowedCompanies: string[];
   employeeId?: string | null;
   isActive: boolean;
+  approvalStatus: ApprovalStatus;
   createdAt: string;
   updatedAt: string;
   employee?: {
@@ -62,6 +66,8 @@ export interface UserRoleHistoryDTO {
   newAllowedCompanies: string[];
   oldIsActive?: boolean | null;
   newIsActive: boolean;
+  oldApprovalStatus?: ApprovalStatus | null;
+  newApprovalStatus?: ApprovalStatus;
   notes?: string | null;
   createdAt: string;
 }

@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
-import { UserRole, UserProfileDTO, UserRoleHistoryDTO } from "@/types";
+import { UserRole, UserProfileDTO, UserRoleHistoryDTO, ApprovalStatus } from "@/types";
 import { getUserProfile } from "./authService";
 
 /**
@@ -46,6 +46,7 @@ export async function getUsers(): Promise<UserProfileDTO[]> {
       allowedCompanies: row.allowed_companies || [],
       employeeId: row.employee_id,
       isActive: row.is_active !== false,
+      approvalStatus: (row.approval_status as ApprovalStatus) || "APPROVED",
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       employee: row.employee
@@ -64,7 +65,7 @@ export async function getUsers(): Promise<UserProfileDTO[]> {
 }
 
 /**
- * Update user role, company scope, and profile attributes
+ * Update user role, company scope, approval status, and profile attributes
  */
 export async function updateUserProfile(
   userId: string,
@@ -75,6 +76,7 @@ export async function updateUserProfile(
     allowedCompanies?: string[];
     employeeId?: string | null;
     isActive?: boolean;
+    approvalStatus?: ApprovalStatus;
   },
   currentUserId?: string
 ): Promise<{ success: boolean; error?: string | null }> {
@@ -159,6 +161,7 @@ export async function updateUserProfile(
     if (updates.allowedCompanies !== undefined) payload.allowed_companies = updates.allowedCompanies;
     if (updates.employeeId !== undefined) payload.employee_id = updates.employeeId;
     if (updates.isActive !== undefined) payload.is_active = updates.isActive;
+    if (updates.approvalStatus !== undefined) payload.approval_status = updates.approvalStatus;
 
     const { error: updateError } = await supabase
       .from("user_profiles")
@@ -166,17 +169,27 @@ export async function updateUserProfile(
       .eq("id", userId);
 
     if (updateError) {
-      return { success: false, error: updateError.message };
+      if (updateError.message.includes("is_active") || updateError.message.includes("approval_status")) {
+        delete payload.is_active;
+        delete payload.approval_status;
+        const { error: retryError } = await supabase
+          .from("user_profiles")
+          .update(payload)
+          .eq("id", userId);
+        if (retryError) return { success: false, error: retryError.message };
+      } else {
+        return { success: false, error: updateError.message };
+      }
     }
 
-    // 4. Log role change history if role or company scope changed
+    // 4. Log role change history if role, company scope, or approval status changed
     const roleChanged = updates.role && oldProfile && updates.role !== oldProfile.role;
     const scopeChanged =
       (updates.allCompanies !== undefined && updates.allCompanies !== oldProfile?.all_companies) ||
       (updates.allowedCompanies !== undefined &&
         JSON.stringify(updates.allowedCompanies.sort()) !== JSON.stringify((oldProfile?.allowed_companies || []).sort()));
 
-    if (roleChanged || scopeChanged || updates.isActive !== undefined) {
+    if (roleChanged || scopeChanged || updates.isActive !== undefined || updates.approvalStatus !== undefined) {
       try {
         await supabase.from("user_role_history").insert({
           user_id: userId,
@@ -189,23 +202,68 @@ export async function updateUserProfile(
           new_allowed_companies: updates.allowedCompanies || oldProfile?.allowed_companies || [],
           old_is_active: oldProfile?.is_active ?? true,
           new_is_active: updates.isActive !== undefined ? updates.isActive : (oldProfile?.is_active ?? true),
-          notes: "Updated by Super Admin via User Management console",
+          notes: updates.approvalStatus
+            ? `Account registration ${updates.approvalStatus.toLowerCase()} by Super Admin`
+            : "Updated by Super Admin via User Management console",
         });
       } catch (auditErr) {
-        // Table may not exist yet if migration pending approval
         console.warn("User role audit log notice:", auditErr);
       }
     }
 
     // 5. Invalidate current session cache if the user modified their own profile
     if (currentUserId && currentUserId === userId) {
-      await getUserProfile(userId);
+      await getUserProfile(userId, true);
     }
 
     return { success: true, error: null };
   } catch (err: any) {
     return { success: false, error: err.message || "Failed to update user profile." };
   }
+}
+
+/**
+ * Approve a pending user registration
+ */
+export async function approveUser(
+  userId: string,
+  updates?: {
+    role?: UserRole;
+    allCompanies?: boolean;
+    allowedCompanies?: string[];
+    employeeId?: string | null;
+  },
+  currentUserId?: string
+): Promise<{ success: boolean; error?: string | null }> {
+  return updateUserProfile(
+    userId,
+    {
+      approvalStatus: "APPROVED",
+      role: updates?.role || "EMPLOYEE",
+      allCompanies: updates?.allCompanies ?? false,
+      allowedCompanies: updates?.allowedCompanies || [],
+      employeeId: updates?.employeeId || null,
+      isActive: true,
+    },
+    currentUserId
+  );
+}
+
+/**
+ * Reject a pending user registration
+ */
+export async function rejectUser(
+  userId: string,
+  currentUserId?: string
+): Promise<{ success: boolean; error?: string | null }> {
+  return updateUserProfile(
+    userId,
+    {
+      approvalStatus: "REJECTED",
+      isActive: false,
+    },
+    currentUserId
+  );
 }
 
 /**

@@ -72,15 +72,17 @@ begin
     role,
     all_companies,
     allowed_companies,
-    is_active
+    is_active,
+    approval_status
   ) values (
     new.id,
-    new.email,
-    v_name,
+    lower(new.email),
+    coalesce(v_name, 'New User'),
     'EMPLOYEE'::public.user_role,
     false,
     '{}'::text[],
-    true
+    true,
+    'PENDING'
   )
   on conflict (id) do nothing;
 
@@ -93,6 +95,6 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_auth_user();
 
--- Note: Table public.user_role_history and column is_active are preserved to prevent data loss.
+-- Note: Table public.user_role_history, column is_active, and column approval_status are preserved to prevent data loss.
 
 commit;

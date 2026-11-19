@@ -53,7 +53,7 @@ serve(async (req: Request) => {
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
     const { data: callerProfile, error: profileError } = await adminClient
       .from("user_profiles")
-      .select("id, role, is_active, name")
+      .select("id, role, is_active, approval_status, name")
       .eq("id", callerUser.id)
       .single();
 
@@ -61,7 +61,8 @@ serve(async (req: Request) => {
       profileError ||
       !callerProfile ||
       callerProfile.role !== "SUPER_ADMIN" ||
-      callerProfile.is_active === false
+      callerProfile.is_active === false ||
+      callerProfile.approval_status !== "APPROVED"
     ) {
       return new Response(
         JSON.stringify({
@@ -139,6 +140,7 @@ serve(async (req: Request) => {
             all_companies: false,
             allowed_companies: [],
             is_active: true,
+            approval_status: "APPROVED",
             updated_at: new Date().toISOString(),
           });
 

@@ -68,12 +68,12 @@ async function main() {
       on conflict (id) do nothing;
 
       -- Ensure ADMIN_A and ADMIN_B are active SUPER_ADMIN
-      insert into public.user_profiles (id, email, name, role, all_companies, is_active)
+      insert into public.user_profiles (id, email, name, role, all_companies, is_active, approval_status)
       values
-        ('${ADMIN_A}', 'admin_a@test.local', 'Admin A', 'SUPER_ADMIN', true, true),
-        ('${ADMIN_B}', 'admin_b@test.local', 'Admin B', 'SUPER_ADMIN', true, true)
+        ('${ADMIN_A}', 'admin_a@test.local', 'Admin A', 'SUPER_ADMIN', true, true, 'APPROVED'),
+        ('${ADMIN_B}', 'admin_b@test.local', 'Admin B', 'SUPER_ADMIN', true, true, 'APPROVED')
       on conflict (id) do update set
-        role = 'SUPER_ADMIN', all_companies = true, is_active = true;
+        role = 'SUPER_ADMIN', all_companies = true, is_active = true, approval_status = 'APPROVED';
 
       -- Clean history for test admins
       delete from public.user_role_history where user_id in ('${ADMIN_A}', '${ADMIN_B}');
@@ -121,7 +121,7 @@ async function main() {
     'Exactly one of the concurrent demotion transactions succeeded, preventing dual demotion'
   );
   assert(
-    failureReason && failureReason.includes('Cannot demote or deactivate the last remaining active Super Admin account'),
+    failureReason && failureReason.includes('Cannot demote, deactivate, or unapprove the last remaining active Super Admin account'),
     `Aborted transaction threw last Super Admin protection error: "${failureReason}"`
   );
 
@@ -219,7 +219,7 @@ async function main() {
     'Exactly one of the concurrent deactivation transactions succeeded, preventing dual deactivation'
   );
   assert(
-    deactFailureReason && deactFailureReason.includes('Cannot demote or deactivate the last remaining active Super Admin account'),
+    deactFailureReason && deactFailureReason.includes('Cannot demote, deactivate, or unapprove the last remaining active Super Admin account'),
     `Aborted transaction threw last Super Admin protection error: "${deactFailureReason}"`
   );
 

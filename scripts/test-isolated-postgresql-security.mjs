@@ -108,31 +108,31 @@ async function main() {
 
     -- Super Admin
     insert into auth.users (id, email) values ('11111111-1111-1111-1111-111111111111', 'superadmin@test.local');
-    update public.user_profiles set name = 'Super Admin Test', role = 'SUPER_ADMIN', all_companies = true, is_active = true where id = '11111111-1111-1111-1111-111111111111';
+    update public.user_profiles set name = 'Super Admin Test', role = 'SUPER_ADMIN', all_companies = true, is_active = true, approval_status = 'APPROVED' where id = '11111111-1111-1111-1111-111111111111';
 
     -- Management
     insert into auth.users (id, email) values ('22222222-2222-2222-2222-222222222222', 'management@test.local');
-    update public.user_profiles set name = 'Executive Mgmt', role = 'MANAGEMENT', all_companies = true, is_active = true where id = '22222222-2222-2222-2222-222222222222';
+    update public.user_profiles set name = 'Executive Mgmt', role = 'MANAGEMENT', all_companies = true, is_active = true, approval_status = 'APPROVED' where id = '22222222-2222-2222-2222-222222222222';
 
     -- IT Admin (GMD, GMC)
     insert into auth.users (id, email) values ('33333333-3333-3333-3333-333333333333', 'itadmin@test.local');
-    update public.user_profiles set name = 'IT Admin GMD GMC', role = 'IT_ADMIN', all_companies = false, allowed_companies = '{GMD,GMC}', is_active = true where id = '33333333-3333-3333-3333-333333333333';
+    update public.user_profiles set name = 'IT Admin GMD GMC', role = 'IT_ADMIN', all_companies = false, allowed_companies = '{GMD,GMC}', is_active = true, approval_status = 'APPROVED' where id = '33333333-3333-3333-3333-333333333333';
 
     -- Finance
     insert into auth.users (id, email) values ('44444444-4444-4444-4444-444444444444', 'finance@test.local');
-    update public.user_profiles set name = 'Finance Officer', role = 'FINANCE', all_companies = true, is_active = true where id = '44444444-4444-4444-4444-444444444444';
+    update public.user_profiles set name = 'Finance Officer', role = 'FINANCE', all_companies = true, is_active = true, approval_status = 'APPROVED' where id = '44444444-4444-4444-4444-444444444444';
 
     -- Auditor (TEL)
     insert into auth.users (id, email) values ('55555555-5555-5555-5555-555555555555', 'auditor@test.local');
-    update public.user_profiles set name = 'Auditor TEL', role = 'AUDITOR', all_companies = false, allowed_companies = '{TEL}', is_active = true where id = '55555555-5555-5555-5555-555555555555';
+    update public.user_profiles set name = 'Auditor TEL', role = 'AUDITOR', all_companies = false, allowed_companies = '{TEL}', is_active = true, approval_status = 'APPROVED' where id = '55555555-5555-5555-5555-555555555555';
 
     -- Employee (RCI)
     insert into auth.users (id, email) values ('66666666-6666-6666-6666-666666666666', 'employee@test.local');
-    update public.user_profiles set name = 'Standard Employee', role = 'EMPLOYEE', all_companies = false, allowed_companies = '{RCI}', is_active = true where id = '66666666-6666-6666-6666-666666666666';
+    update public.user_profiles set name = 'Standard Employee', role = 'EMPLOYEE', all_companies = false, allowed_companies = '{RCI}', is_active = true, approval_status = 'APPROVED' where id = '66666666-6666-6666-6666-666666666666';
 
     -- Deactivated User
     insert into auth.users (id, email) values ('77777777-7777-7777-7777-777777777777', 'deactivated@test.local');
-    update public.user_profiles set name = 'Deactivated Account', role = 'SUPER_ADMIN', all_companies = true, is_active = false where id = '77777777-7777-7777-7777-777777777777';
+    update public.user_profiles set name = 'Deactivated Account', role = 'SUPER_ADMIN', all_companies = true, is_active = false, approval_status = 'APPROVED' where id = '77777777-7777-7777-7777-777777777777';
 
     -- Unprofiled User (in auth.users, NO user_profiles row)
     insert into auth.users (id, email) values ('88888888-8888-8888-8888-888888888888', 'unprofiled@test.local');
@@ -279,14 +279,14 @@ async function main() {
     set role authenticated;
     set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
     update public.user_profiles set role = 'EMPLOYEE' where id = '11111111-1111-1111-1111-111111111111';
-  `, 'Security Protection: Cannot demote or deactivate the last remaining active Super Admin account.',
+  `, 'Cannot demote, deactivate, or unapprove the last remaining active Super Admin account.',
   'Last Super Admin cannot demote themselves to EMPLOYEE');
 
   assertThrows(`
     set role authenticated;
     set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
     update public.user_profiles set is_active = false where id = '11111111-1111-1111-1111-111111111111';
-  `, 'Security Protection: Cannot demote or deactivate the last remaining active Super Admin account.',
+  `, 'Cannot demote, deactivate, or unapprove the last remaining active Super Admin account.',
   'Last Super Admin cannot deactivate themselves');
 
   assertThrows(`
@@ -301,7 +301,7 @@ async function main() {
     insert into auth.users (id, email) values ('11111111-2222-3333-4444-555555555555', 'admin2@test.local');
     set role authenticated;
     set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
-    update public.user_profiles set name = 'Second Admin', role = 'SUPER_ADMIN', all_companies = true, is_active = true
+    update public.user_profiles set name = 'Second Admin', role = 'SUPER_ADMIN', all_companies = true, is_active = true, approval_status = 'APPROVED'
     where id = '11111111-2222-3333-4444-555555555555';
   `);
 
@@ -485,17 +485,116 @@ async function main() {
   `);
 
   const newProfile = runPsql(`
-    select role::text || '|' || all_companies::text || '|' || array_to_string(allowed_companies, ',') || '|' || is_active::text
+    select role::text || '|' || all_companies::text || '|' || array_to_string(allowed_companies, ',') || '|' || is_active::text || '|' || approval_status
     from public.user_profiles
     where id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
   `);
-  assert(newProfile === 'EMPLOYEE|false||true',
-    `Newly created user profile automatically defaults to EMPLOYEE with zero company access: "${newProfile}"`);
+  assert(newProfile === 'EMPLOYEE|false||true|PENDING',
+    `Newly created user profile automatically defaults to EMPLOYEE with zero company access and PENDING status: "${newProfile}"`);
 
   // Clean up test user
   runPsql(`
     delete from public.user_profiles where id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
     delete from auth.users where id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+  `);
+
+  // -------------------------------------------------------------
+  // TEST SUITE 10: REGISTRATION & ACCOUNT APPROVAL GOVERNANCE
+  // -------------------------------------------------------------
+  console.log('\n--- TEST SUITE 10: Registration & Account Approval Governance ---');
+
+  // 10.1 Newly registered user defaults to PENDING
+  runPsql(`
+    delete from public.user_profiles where id = '99999999-9999-9999-9999-999999999999';
+    delete from auth.users where id = '99999999-9999-9999-9999-999999999999';
+    insert into auth.users (id, email) values ('99999999-9999-9999-9999-999999999999', 'pendinguser@test.local');
+  `);
+  const pendingStatus = runPsql(`
+    select approval_status from public.user_profiles where id = '99999999-9999-9999-9999-999999999999';
+  `);
+  assert(pendingStatus === 'PENDING', 'New registered user defaults to approval_status = PENDING');
+
+  // 10.2 Pending user has zero role & zero company access
+  const pendingRole = runPsql(`
+    set role authenticated;
+    set request.jwt.claim.sub = '99999999-9999-9999-9999-999999999999';
+    select coalesce(public.get_current_role()::text, 'NULL');
+  `);
+  assert(pendingRole === 'NULL', 'Pending user get_current_role() returns NULL (Zero platform privileges)');
+
+  const pendingCompanyAccess = runPsql(`
+    set role authenticated;
+    set request.jwt.claim.sub = '99999999-9999-9999-9999-999999999999';
+    select public.can_access_company('comp_gmd');
+  `);
+  assert(pendingCompanyAccess === 'f', 'Pending user can_access_company() returns FALSE');
+
+  // 10.3a Pending user cannot self-approve (Row blocked by RLS)
+  runPsql(`
+    set role authenticated;
+    set request.jwt.claim.sub = '99999999-9999-9999-9999-999999999999';
+    update public.user_profiles set approval_status = 'APPROVED' where id = '99999999-9999-9999-9999-999999999999';
+  `);
+  const stillPending = runPsql(`
+    select approval_status from public.user_profiles where id = '99999999-9999-9999-9999-999999999999';
+  `);
+  assert(stillPending === 'PENDING', 'Pending user cannot self-approve their own account (Status remains PENDING)');
+
+  // 10.3b Employee cannot modify approval_status (Privilege escalation blocked)
+  assertThrows(`
+    set role authenticated;
+    set request.jwt.claim.sub = '66666666-6666-6666-6666-666666666666';
+    update public.user_profiles set approval_status = 'REJECTED' where id = '66666666-6666-6666-6666-666666666666';
+  `, 'Privilege Escalation Blocked: Only Super Admins can approve or reject user registrations.',
+  'Active employee cannot modify approval_status (Privilege escalation blocked)');
+
+  // 10.4 Super Admin can approve pending user and assign company access
+  runPsql(`
+    set role authenticated;
+    set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+    update public.user_profiles
+    set approval_status = 'APPROVED', allowed_companies = '{GMD}'
+    where id = '99999999-9999-9999-9999-999999999999';
+  `);
+  const approvedRole = runPsql(`
+    set role authenticated;
+    set request.jwt.claim.sub = '99999999-9999-9999-9999-999999999999';
+    select public.get_current_role()::text;
+  `);
+  const approvedAccessGmd = runPsql(`
+    set role authenticated;
+    set request.jwt.claim.sub = '99999999-9999-9999-9999-999999999999';
+    select public.can_access_company('comp_gmd');
+  `);
+  const approvedAccessGmc = runPsql(`
+    set role authenticated;
+    set request.jwt.claim.sub = '99999999-9999-9999-9999-999999999999';
+    select public.can_access_company('comp_gmc');
+  `);
+  assert(approvedRole === 'EMPLOYEE' && approvedAccessGmd === 't' && approvedAccessGmc === 'f',
+    'Approved user gains role EMPLOYEE and authorized access only to granted company {GMD}');
+
+  // 10.5 Protect Last Super Admin from unapproval
+  assertThrows(`
+    set role authenticated;
+    set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+    update public.user_profiles set approval_status = 'PENDING' where id = '11111111-1111-1111-1111-111111111111';
+  `, 'Cannot demote, deactivate, or unapprove the last remaining active Super Admin',
+    'Cannot set the last active Super Admin account to PENDING or REJECTED');
+
+  // 10.6 Audit trail records approval status change
+  const approvalAuditNotes = runPsql(`
+    select notes from public.user_role_history
+    where user_id = '99999999-9999-9999-9999-999999999999' and action = 'UPDATE'
+    order by created_at desc limit 1;
+  `);
+  assert(approvalAuditNotes.includes('APPROVED'),
+    `Audit trail captures approval status change: "${approvalAuditNotes}"`);
+
+  // Clean up
+  runPsql(`
+    delete from public.user_profiles where id = '99999999-9999-9999-9999-999999999999';
+    delete from auth.users where id = '99999999-9999-9999-9999-999999999999';
   `);
 
   console.log('\n=================================================================');

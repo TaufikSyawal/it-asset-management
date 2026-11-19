@@ -1,9 +1,15 @@
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
-import { UserRole, UserSession } from "@/types";
+import { UserRole, UserSession, ApprovalStatus } from "@/types";
 
 export interface LoginCredentials {
   email: string;
   password: string;
+}
+
+export interface SignUpParams {
+  email: string;
+  password: string;
+  name: string;
 }
 
 const CACHE_KEY = "itams_user_session_cache";
@@ -32,6 +38,7 @@ let memoryProfile: UserSession | null = null;
 
 /**
  * Sign in using Supabase Auth (Email + Password)
+ * Validates active status and approval status
  */
 export async function signIn(credentials: LoginCredentials): Promise<{ user: UserSession | null; error: string | null }> {
   if (!isSupabaseConfigured()) {
@@ -53,10 +60,108 @@ export async function signIn(credentials: LoginCredentials): Promise<{ user: Use
     return { user: null, error: "Authenticated user has no matching system profile. Contact your Super Admin." };
   }
 
+  // Enforce account approval status
+  if (profile.approvalStatus === "PENDING") {
+    await signOut();
+    return {
+      user: null,
+      error: "Your registration is currently pending Super Admin approval. You cannot access company assets or operational data until an administrator approves your account.",
+    };
+  }
+
+  if (profile.approvalStatus === "REJECTED") {
+    await signOut();
+    return {
+      user: null,
+      error: "Your account registration has been declined by the Super Admin. Please contact your IT Administrator.",
+    };
+  }
+
   memoryProfile = profile;
   setStoredProfile(profile);
 
   return { user: profile, error: null };
+}
+
+/**
+ * Register a new user account (Sign Up)
+ * Automatically defaults to EMPLOYEE role with PENDING approval status and zero company access
+ */
+export async function signUp(params: SignUpParams): Promise<{ success: boolean; message?: string; error?: string | null }> {
+  if (!isSupabaseConfigured()) {
+    return { success: false, error: "Supabase credentials are not configured in environment." };
+  }
+
+  const cleanEmail = params.email.trim().toLowerCase();
+  const cleanName = params.name.trim();
+
+  if (!cleanName || cleanName.length < 2) {
+    return { success: false, error: "Please enter your full name (minimum 2 characters)." };
+  }
+
+  if (!cleanEmail || !cleanEmail.includes("@") || !cleanEmail.includes(".")) {
+    return { success: false, error: "Please enter a valid corporate email address." };
+  }
+
+  if (!params.password || params.password.length < 6) {
+    return { success: false, error: "Password must be at least 6 characters in length." };
+  }
+
+  try {
+    const { data, error } = await supabase.auth.signUp({
+      email: cleanEmail,
+      password: params.password,
+      options: {
+        data: {
+          name: cleanName,
+        },
+      },
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    // Automatically sign out immediately after signup so unapproved session does not remain active in browser
+    await supabase.auth.signOut();
+    memoryProfile = null;
+    setStoredProfile(null);
+
+    return {
+      success: true,
+      message: "Registration submitted successfully! Please check your email to verify your email address. Once verified, your account will be pending Super Admin approval before you can access the system.",
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || "An unexpected error occurred during user registration." };
+  }
+}
+
+/**
+ * Request password recovery email
+ */
+export async function requestPasswordReset(email: string): Promise<{ success: boolean; message?: string; error?: string | null }> {
+  if (!isSupabaseConfigured()) {
+    return { success: false, error: "Supabase credentials are not configured in environment." };
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes("@")) {
+    return { success: false, error: "Please enter a valid corporate email address." };
+  }
+
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail);
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    return {
+      success: true,
+      message: `If an account is registered with ${cleanEmail}, a secure password reset link has been dispatched to your email address.`,
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Failed to initiate password reset request." };
+  }
 }
 
 /**
@@ -149,6 +254,22 @@ export async function getUserProfile(userId?: string, forceRefresh: boolean = fa
       return null;
     }
 
+    // Check approval_status non-blockingly (defaults to 'APPROVED' on unmigrated databases)
+    let approvalStatus: ApprovalStatus = "APPROVED";
+    try {
+      const { data: statusCheck, error: statusErr } = await supabase
+        .from("user_profiles")
+        .select("approval_status")
+        .eq("id", targetId)
+        .single();
+
+      if (!statusErr && statusCheck && statusCheck.approval_status) {
+        approvalStatus = statusCheck.approval_status as ApprovalStatus;
+      }
+    } catch {
+      approvalStatus = "APPROVED";
+    }
+
     const profile: UserSession = {
       id: data.id,
       email: data.email,
@@ -157,7 +278,8 @@ export async function getUserProfile(userId?: string, forceRefresh: boolean = fa
       allCompanies: data.all_companies || false,
       allowedCompanies: data.allowed_companies || [],
       employeeId: data.employee_id,
-      isActive: true,
+      isActive: isUserActive,
+      approvalStatus,
     };
 
     memoryProfile = profile;
