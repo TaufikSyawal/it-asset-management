@@ -98,34 +98,50 @@ export async function getUserProfile(userId?: string, forceRefresh: boolean = fa
       targetId = session.user.id;
     }
 
-    // Try fetching latest profile from database
-    const { data, error } = await supabase
+    // Try fetching latest profile from database with resilient fallback
+    // Core columns are guaranteed to exist across all migration states
+    let { data, error } = await supabase
       .from("user_profiles")
-      .select("id, email, name, role, all_companies, allowed_companies, employee_id, is_active")
+      .select("id, email, name, role, all_companies, allowed_companies, employee_id")
       .eq("id", targetId)
       .single();
 
     if (error || !data) {
-      // If profile is missing or row not found (PGRST116), immediately invalidate cache
-      if (error?.code === "PGRST116" || !data) {
-        console.warn("User profile not found in database. Invalidating session cache.");
+      // If profile is genuinely missing (PGRST116: row not found), immediately invalidate cache
+      if (error?.code === "PGRST116") {
+        console.warn("User profile not found in database (PGRST116). Invalidating session cache.");
         memoryProfile = null;
         setStoredProfile(null);
         return null;
       }
 
-      // For transient network failures, only allow offline fallback if browser is genuinely offline
-      if (!forceRefresh && typeof navigator !== "undefined" && !navigator.onLine) {
-        const cached = memoryProfile || getStoredProfile();
-        if (cached && cached.id === targetId && cached.isActive !== false) {
-          return cached;
-        }
+      // For network errors or database connection drops, preserve valid cached session
+      const cached = memoryProfile || getStoredProfile();
+      if (cached && cached.id === targetId && cached.isActive !== false) {
+        console.warn("Transient database error while fetching profile, retaining active cache:", error?.message);
+        return cached;
       }
       return null;
     }
 
+    // Check is_active non-blockingly (resilient against missing is_active column on unmigrated databases)
+    let isUserActive = true;
+    try {
+      const { data: activeCheck, error: activeErr } = await supabase
+        .from("user_profiles")
+        .select("is_active")
+        .eq("id", targetId)
+        .single();
+
+      if (!activeErr && activeCheck && activeCheck.is_active === false) {
+        isUserActive = false;
+      }
+    } catch {
+      isUserActive = true;
+    }
+
     // Immediate deactivation enforcement: if is_active is explicitly false, terminate session
-    if (data.is_active === false) {
+    if (!isUserActive) {
       console.warn(`User account ${data.email} is deactivated. Revoking session access immediately.`);
       memoryProfile = null;
       setStoredProfile(null);

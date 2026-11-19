@@ -190,10 +190,7 @@ export default function AppShell() {
           getUserProfile(undefined, true)
             .then((refreshedUser) => {
               if (!mounted) return;
-              if (!refreshedUser) {
-                setAuthenticatedUser(null);
-                setIsAuthModalOpen(true);
-              } else {
+              if (refreshedUser) {
                 setAuthenticatedUser(refreshedUser);
                 setCurrentRole(refreshedUser.role);
               }

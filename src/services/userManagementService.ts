@@ -130,12 +130,24 @@ export async function updateUserProfile(
       }
     }
 
-    // 2. Fetch old profile for audit logging
-    const { data: oldProfile } = await supabase
+    // 2. Fetch old profile for audit logging (resilient against missing is_active column)
+    let oldProfile: any = null;
+    const { data: profileWithActive, error: activeErr } = await supabase
       .from("user_profiles")
       .select("role, all_companies, allowed_companies, is_active")
       .eq("id", userId)
       .single();
+
+    if (!activeErr && profileWithActive) {
+      oldProfile = profileWithActive;
+    } else {
+      const { data: baseProfile } = await supabase
+        .from("user_profiles")
+        .select("role, all_companies, allowed_companies")
+        .eq("id", userId)
+        .single();
+      oldProfile = baseProfile ? { ...baseProfile, is_active: true } : null;
+    }
 
     // 3. Build update payload
     const payload: any = {
