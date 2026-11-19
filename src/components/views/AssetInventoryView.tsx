@@ -27,6 +27,8 @@ interface AssetInventoryViewProps {
   onPrintLabel?: (asset: AssetDTO) => void;
   onPrintBatchLabels?: (assets: AssetDTO[]) => void;
   loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
 }
 
 export default function AssetInventoryView(props: AssetInventoryViewProps) {

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Sidebar, { NavView } from "@/components/Sidebar";
 import TopNav from "@/components/TopNav";
 import DbStatusBanner from "@/components/DbStatusBanner";
@@ -56,12 +56,27 @@ export default function AppShell() {
   const [totalPages, setTotalPages] = useState(1);
   const [stats, setStats] = useState<any>(createEmptyStats());
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   // Filters for Asset Inventory
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [categoryFilter, setCategoryFilter] = useState("ALL");
   const [duplicateOnly, setDuplicateOnly] = useState(false);
+
+  // Debounce search input to prevent rapid request loops
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Reset page to 1 when filters or debounced search change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch, selectedCompanyId, statusFilter, categoryFilter, duplicateOnly]);
 
   // Offline Audit Queue
   const [offlineQueueCount, setOfflineQueueCount] = useState(0);
@@ -83,7 +98,7 @@ export default function AppShell() {
   const [isLabelModalOpen, setIsLabelModalOpen] = useState(false);
   const [assetsToPrint, setAssetsToPrint] = useState<AssetDTO[]>([]);
 
-  // 1. Fetch metadata (companies, employees)
+  // 1. Fetch metadata (companies, employees) - completely stable reference
   const fetchMetadata = useCallback(async () => {
     try {
       const [compData, empData] = await Promise.all([
@@ -97,12 +112,16 @@ export default function AppShell() {
     }
   }, []);
 
-  // 2. Fetch assets & statistics
+  // 2. Fetch assets & statistics with in-flight request tracking
+  const activeRequestIdRef = useRef(0);
+
   const fetchAssets = useCallback(async () => {
+    const reqId = ++activeRequestIdRef.current;
     setLoading(true);
+    setFetchError(null);
     try {
       const result = await getAssets({
-        search,
+        search: debouncedSearch,
         companyId: selectedCompanyId,
         status: statusFilter,
         category: categoryFilter,
@@ -111,57 +130,87 @@ export default function AppShell() {
         limit: 15,
       });
 
-      setAssets(result.assets || []);
-      setTotalAssets(result.total || 0);
-      setTotalPages(result.totalPages || 1);
-      setStats(result.stats || createEmptyStats(companies));
-    } catch (err) {
-      console.error("Error fetching assets:", err);
-      setStats((prev: any) => prev || createEmptyStats(companies));
+      // Discard stale in-flight responses
+      if (reqId === activeRequestIdRef.current) {
+        setAssets(result.assets || []);
+        setTotalAssets(result.total || 0);
+        setTotalPages(result.totalPages || 1);
+        if (result.stats) {
+          setStats(result.stats);
+        }
+        setFetchError(null);
+      }
+    } catch (err: any) {
+      if (reqId === activeRequestIdRef.current) {
+        console.error("Error fetching assets:", err);
+        setFetchError(err.message || "Failed to load inventory assets. Please check connection.");
+      }
     } finally {
-      setLoading(false);
+      if (reqId === activeRequestIdRef.current) {
+        setLoading(false);
+      }
     }
-  }, [search, selectedCompanyId, statusFilter, categoryFilter, duplicateOnly, currentPage, companies]);
+  }, [debouncedSearch, selectedCompanyId, statusFilter, categoryFilter, duplicateOnly, currentPage]);
 
-  // 3. Check Auth state & Offline sync on mount
+  // 3. SINGLE, permanent Auth subscription mounted once on app load
   useEffect(() => {
+    let mounted = true;
+
     if (isSupabaseConfigured()) {
-      getUserProfile().then((user) => {
-        if (user) {
+      getUserProfile()
+        .then((user) => {
+          if (!mounted) return;
+          if (user) {
+            setAuthenticatedUser(user);
+            setCurrentRole(user.role);
+            setIsAuthModalOpen(false);
+          } else {
+            setIsAuthModalOpen(true);
+          }
+        })
+        .catch((err) => {
+          console.warn("Initial auth check warning:", err);
+        });
+
+      const authSub = onAuthStateChange((user, event) => {
+        if (!mounted) return;
+        if (event === "SIGNED_OUT" || !user) {
+          setAuthenticatedUser(null);
+          setIsAuthModalOpen(true);
+        } else {
           setAuthenticatedUser(user);
           setCurrentRole(user.role);
-          fetchMetadata();
-          fetchAssets();
-        } else {
-          setIsAuthModalOpen(true);
-        }
-      });
-
-      const authSub = onAuthStateChange((user) => {
-        setAuthenticatedUser(user);
-        if (user) {
-          setCurrentRole(user.role);
           setIsAuthModalOpen(false);
-          fetchMetadata();
-          fetchAssets();
-        } else {
-          setIsAuthModalOpen(true);
         }
       });
 
-      return () => authSub.unsubscribe();
+      return () => {
+        mounted = false;
+        authSub.unsubscribe();
+      };
     } else {
       // Local dev role fetch
       fetch("/api/auth/role")
         .then((res) => res.json())
         .then((data) => {
+          if (!mounted) return;
           if (data.user?.role) setCurrentRole(data.user.role);
         })
         .catch(() => {});
     }
-  }, [fetchAssets, fetchMetadata]);
+  }, []); // Run ONCE on mount! Never tears down during active user session!
 
-  // 4. Offline sync listener
+  // 4. Initial metadata fetch on mount
+  useEffect(() => {
+    fetchMetadata();
+  }, [fetchMetadata]);
+
+  // 5. Data fetch effect - strictly triggered by filter/page/role changes
+  useEffect(() => {
+    fetchAssets();
+  }, [fetchAssets, currentRole]);
+
+  // 6. Offline sync listener - registered with stable fetchAssets callback
   useEffect(() => {
     const updateOfflineCount = async () => {
       const queued = await getOfflineScans();
@@ -178,14 +227,6 @@ export default function AppShell() {
 
     return () => unregister();
   }, [fetchAssets]);
-
-  useEffect(() => {
-    fetchMetadata();
-  }, [fetchMetadata]);
-
-  useEffect(() => {
-    fetchAssets();
-  }, [fetchAssets, currentRole]);
 
   // Handlers
   const handleRoleChange = (newRole: UserRole) => {
@@ -447,6 +488,8 @@ export default function AppShell() {
               onPrintLabel={handlePrintSingleLabel}
               onPrintBatchLabels={handlePrintBatchLabels}
               loading={loading}
+              error={fetchError}
+              onRetry={fetchAssets}
             />
           )}
 

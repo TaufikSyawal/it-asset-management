@@ -93,8 +93,8 @@ export default function StockOpnameView({
       const session = await getStockOpnameSessionDetails(id);
       if (session) {
         setActiveSession(session);
-        if (session.locationScope && session.locationScope !== "ALL" && !currentScanLocation) {
-          setCurrentScanLocation(session.locationScope);
+        if (session.locationScope && session.locationScope !== "ALL") {
+          setCurrentScanLocation((prev) => prev || session.locationScope || "");
         }
       }
     } catch (err) {
@@ -102,7 +102,7 @@ export default function StockOpnameView({
     } finally {
       setLoadingActiveSession(false);
     }
-  }, [currentScanLocation]);
+  }, []);
 
   useEffect(() => {
     fetchSessions();

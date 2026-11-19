@@ -64,7 +64,7 @@ export default function SettingsView({
     if (isCloud) {
       try {
         const { count, error } = await supabase
-          .from("assets")
+          .from("assets_view")
           .select("id", { count: "exact", head: true })
           .eq("is_archived", false);
 

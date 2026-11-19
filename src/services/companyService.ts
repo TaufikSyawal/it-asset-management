@@ -22,7 +22,7 @@ export async function getCompanies(includeInactive: boolean = false): Promise<Co
 
       // Fetch asset count per company to display badge in TopNav
       const { data: assetCounts } = await supabase
-        .from("assets")
+        .from("assets_view")
         .select("company_id")
         .eq("is_archived", false);
 

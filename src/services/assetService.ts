@@ -574,13 +574,15 @@ export async function computeStats(companyId?: string): Promise<DashboardStats> 
         .select(`
           id,
           action_type,
-          performed_at,
+          assigned_at,
           condition_at_action,
           notes,
-          asset:assets_view (id, asset_tag, asset_name, category, company_id),
+          handover_doc_ref,
+          performed_by,
+          asset:assets (id, asset_tag, asset_name, category, company_id),
           employee:employees (id, name, employee_id)
         `)
-        .order("performed_at", { ascending: false })
+        .order("assigned_at", { ascending: false })
         .limit(10),
     ]);
 
@@ -686,9 +688,12 @@ export async function computeStats(companyId?: string): Promise<DashboardStats> 
     const recentAssignments: any[] = (asgRes.data || []).map((a: any) => ({
       id: a.id,
       actionType: a.action_type,
-      performedAt: a.performed_at,
+      performedAt: a.assigned_at,
+      assignedAt: a.assigned_at,
       conditionAtAction: a.condition_at_action,
       notes: a.notes,
+      handoverDocRef: a.handover_doc_ref,
+      performedBy: a.performed_by,
       asset: a.asset ? {
         id: a.asset.id,
         assetTag: a.asset.asset_tag,

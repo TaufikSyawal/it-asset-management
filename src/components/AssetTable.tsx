@@ -11,6 +11,8 @@ import {
   Trash2,
   UserCheck,
   AlertTriangle,
+  AlertCircle,
+  RefreshCw,
   Laptop,
   Monitor,
   Server,
@@ -48,6 +50,8 @@ interface AssetTableProps {
   onPrintLabel?: (asset: AssetDTO) => void;
   onPrintBatchLabels?: (assets: AssetDTO[]) => void;
   loading?: boolean;
+  error?: string | null;
+  onRetry?: () => void;
 }
 
 export default function AssetTable({
@@ -73,6 +77,8 @@ export default function AssetTable({
   onPrintLabel,
   onPrintBatchLabels,
   loading = false,
+  error = null,
+  onRetry,
 }: AssetTableProps) {
   const permissions = ROLE_PERMISSIONS[currentRole];
 
@@ -261,6 +267,25 @@ export default function AssetTable({
                 <td colSpan={permissions.canViewFinancials ? 9 : 8} className="py-12 text-center text-slate-400">
                   <div className="inline-block animate-spin rounded-full h-6 w-6 border-2 border-brand-500 border-t-transparent" />
                   <p className="mt-2 text-xs">Loading inventory records...</p>
+                </td>
+              </tr>
+            ) : error ? (
+              <tr>
+                <td colSpan={permissions.canViewFinancials ? 9 : 8} className="py-12 text-center text-slate-600">
+                  <div className="max-w-md mx-auto p-4 text-center">
+                    <AlertCircle className="w-8 h-8 mx-auto text-rose-500 mb-2" />
+                    <p className="text-sm font-bold text-slate-800">Unable to Load Inventory Records</p>
+                    <p className="text-xs text-rose-600 font-medium mt-1 mb-3">{error}</p>
+                    {onRetry && (
+                      <button
+                        onClick={onRetry}
+                        className="px-3.5 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Retry Connection</span>
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ) : assets.length === 0 ? (
