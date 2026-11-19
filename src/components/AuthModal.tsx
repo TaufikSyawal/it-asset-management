@@ -12,6 +12,9 @@ interface AuthModalProps {
 
 type AuthMode = "SIGN_IN" | "SIGN_UP" | "FORGOT_PASSWORD" | "REGISTRATION_SUCCESS";
 
+// Feature Guard: Keep Sign Up disabled in production until backend authorization and approval safeguards are successfully applied and verified
+const IS_SIGN_UP_ENABLED = false;
+
 export default function AuthModal({ isOpen, onSuccess }: AuthModalProps) {
   const [mode, setMode] = useState<AuthMode>("SIGN_IN");
   
@@ -37,6 +40,7 @@ export default function AuthModal({ isOpen, onSuccess }: AuthModalProps) {
   };
 
   const switchMode = (newMode: AuthMode) => {
+    if (newMode === "SIGN_UP" && !IS_SIGN_UP_ENABLED) return;
     resetForm();
     setMode(newMode);
   };
@@ -156,7 +160,7 @@ export default function AuthModal({ isOpen, onSuccess }: AuthModalProps) {
           </p>
 
           {/* Mode Switch Tabs (for Sign In vs Sign Up) */}
-          {mode !== "REGISTRATION_SUCCESS" && (
+          {mode !== "REGISTRATION_SUCCESS" && IS_SIGN_UP_ENABLED && (
             <div className="flex bg-slate-800/80 p-1 rounded-xl mt-4 border border-slate-700/60 text-xs">
               <button
                 type="button"
@@ -270,14 +274,22 @@ export default function AuthModal({ isOpen, onSuccess }: AuthModalProps) {
               </button>
 
               <div className="pt-3 border-t border-slate-100 text-center text-xs text-slate-500">
-                New team member?{" "}
-                <button
-                  type="button"
-                  onClick={() => switchMode("SIGN_UP")}
-                  className="font-semibold text-brand-600 hover:text-brand-700 hover:underline"
-                >
-                  Register an account
-                </button>
+                {IS_SIGN_UP_ENABLED ? (
+                  <>
+                    New team member?{" "}
+                    <button
+                      type="button"
+                      onClick={() => switchMode("SIGN_UP")}
+                      className="font-semibold text-brand-600 hover:text-brand-700 hover:underline"
+                    >
+                      Register an account
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-slate-400">
+                    Need system access? Contact your Super Admin to request an enterprise account.
+                  </span>
+                )}
               </div>
             </form>
           )}
