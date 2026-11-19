@@ -28,7 +28,7 @@ import QRLabelModal from "@/components/QRLabelModal";
 import { AssetDTO, CompanyDTO, EmployeeDTO, UserRole, AssignmentAction, UserSession } from "@/types";
 import { getCompanies } from "@/services/companyService";
 import { getEmployees } from "@/services/employeeService";
-import { getAssets, getAssetById, archiveAsset } from "@/services/assetService";
+import { getAssets, getAssetById, archiveAsset, createEmptyStats } from "@/services/assetService";
 import { getUserProfile, signOut, onAuthStateChange } from "@/services/authService";
 import { registerAutoSyncListener, getOfflineScans, syncOfflineScans } from "@/services/offlineSyncService";
 import { isSupabaseConfigured } from "@/lib/supabase";
@@ -54,7 +54,7 @@ export default function AppShell() {
   const [totalAssets, setTotalAssets] = useState(0);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [stats, setStats] = useState<any>(null);
+  const [stats, setStats] = useState<any>(createEmptyStats());
   const [loading, setLoading] = useState(true);
 
   // Filters for Asset Inventory
@@ -83,60 +83,8 @@ export default function AppShell() {
   const [isLabelModalOpen, setIsLabelModalOpen] = useState(false);
   const [assetsToPrint, setAssetsToPrint] = useState<AssetDTO[]>([]);
 
-  // 1. Check Auth state & Offline sync on mount
-  useEffect(() => {
-    if (isSupabaseConfigured()) {
-      getUserProfile().then((user) => {
-        if (user) {
-          setAuthenticatedUser(user);
-          setCurrentRole(user.role);
-        } else {
-          setIsAuthModalOpen(true);
-        }
-      });
-
-      const authSub = onAuthStateChange((user) => {
-        setAuthenticatedUser(user);
-        if (user) {
-          setCurrentRole(user.role);
-          setIsAuthModalOpen(false);
-        } else {
-          setIsAuthModalOpen(true);
-        }
-      });
-
-      return () => authSub.unsubscribe();
-    } else {
-      // Local dev role fetch
-      fetch("/api/auth/role")
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.user?.role) setCurrentRole(data.user.role);
-        })
-        .catch(() => {});
-    }
-  }, []);
-
-  // 2. Offline sync listener
-  useEffect(() => {
-    const updateOfflineCount = async () => {
-      const queued = await getOfflineScans();
-      setOfflineQueueCount(queued.length);
-    };
-
-    updateOfflineCount();
-    const unregister = registerAutoSyncListener(async (res) => {
-      if (res.synced > 0) {
-        updateOfflineCount();
-        fetchAssets();
-      }
-    });
-
-    return () => unregister();
-  }, []);
-
-  // 3. Fetch metadata (companies, employees)
-  const fetchMetadata = async () => {
+  // 1. Fetch metadata (companies, employees)
+  const fetchMetadata = useCallback(async () => {
     try {
       const [compData, empData] = await Promise.all([
         getCompanies(),
@@ -147,9 +95,9 @@ export default function AppShell() {
     } catch (err) {
       console.error("Error fetching metadata:", err);
     }
-  };
+  }, []);
 
-  // 4. Fetch assets & statistics
+  // 2. Fetch assets & statistics
   const fetchAssets = useCallback(async () => {
     setLoading(true);
     try {
@@ -166,17 +114,74 @@ export default function AppShell() {
       setAssets(result.assets || []);
       setTotalAssets(result.total || 0);
       setTotalPages(result.totalPages || 1);
-      setStats(result.stats || null);
+      setStats(result.stats || createEmptyStats(companies));
     } catch (err) {
       console.error("Error fetching assets:", err);
+      setStats((prev: any) => prev || createEmptyStats(companies));
     } finally {
       setLoading(false);
     }
-  }, [search, selectedCompanyId, statusFilter, categoryFilter, duplicateOnly, currentPage]);
+  }, [search, selectedCompanyId, statusFilter, categoryFilter, duplicateOnly, currentPage, companies]);
+
+  // 3. Check Auth state & Offline sync on mount
+  useEffect(() => {
+    if (isSupabaseConfigured()) {
+      getUserProfile().then((user) => {
+        if (user) {
+          setAuthenticatedUser(user);
+          setCurrentRole(user.role);
+          fetchMetadata();
+          fetchAssets();
+        } else {
+          setIsAuthModalOpen(true);
+        }
+      });
+
+      const authSub = onAuthStateChange((user) => {
+        setAuthenticatedUser(user);
+        if (user) {
+          setCurrentRole(user.role);
+          setIsAuthModalOpen(false);
+          fetchMetadata();
+          fetchAssets();
+        } else {
+          setIsAuthModalOpen(true);
+        }
+      });
+
+      return () => authSub.unsubscribe();
+    } else {
+      // Local dev role fetch
+      fetch("/api/auth/role")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.user?.role) setCurrentRole(data.user.role);
+        })
+        .catch(() => {});
+    }
+  }, [fetchAssets, fetchMetadata]);
+
+  // 4. Offline sync listener
+  useEffect(() => {
+    const updateOfflineCount = async () => {
+      const queued = await getOfflineScans();
+      setOfflineQueueCount(queued.length);
+    };
+
+    updateOfflineCount();
+    const unregister = registerAutoSyncListener(async (res) => {
+      if (res.synced > 0) {
+        updateOfflineCount();
+        fetchAssets();
+      }
+    });
+
+    return () => unregister();
+  }, [fetchAssets]);
 
   useEffect(() => {
     fetchMetadata();
-  }, []);
+  }, [fetchMetadata]);
 
   useEffect(() => {
     fetchAssets();
@@ -382,6 +387,7 @@ export default function AppShell() {
           {activeView === "management" && (
             <ManagementOverview
               stats={stats}
+              loading={loading}
               currentRole={currentRole}
               selectedCompanyName={activeCompanyName}
               onNavigateToInventory={handleNavigateToInventory}
@@ -392,6 +398,7 @@ export default function AppShell() {
           {activeView === "operations" && (
             <ITOperationsOverview
               stats={stats}
+              loading={loading}
               currentRole={currentRole}
               selectedCompanyName={activeCompanyName}
               onAddAsset={handleAddAsset}

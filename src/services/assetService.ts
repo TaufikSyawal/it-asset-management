@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
-import { AssetDTO, AssetFilters, CompanyDTO, EmployeeDTO, AssetPhotoDTO } from "@/types";
+import { AssetDTO, AssetFilters, CompanyDTO, EmployeeDTO, AssetPhotoDTO, DashboardStats } from "@/types";
 
 /**
  * Transforms snake_case database record to camelCase AssetDTO
@@ -128,7 +128,56 @@ export interface AssetsQueryResult {
   total: number;
   page: number;
   totalPages: number;
-  stats: any;
+  stats: DashboardStats;
+}
+
+/**
+ * Creates a complete empty DashboardStats structure for zero-asset or loading fallbacks
+ */
+export function createEmptyStats(companies: Array<{ code: string; name?: string }> = []): DashboardStats {
+  const defaultCompanies = companies.length > 0
+    ? companies.map((c) => ({ code: c.code, name: c.name || c.code, count: 0, percentage: 0 }))
+    : [
+        { code: "GMD", name: "GMD", count: 0, percentage: 0 },
+        { code: "GMC", name: "GMC", count: 0, percentage: 0 },
+        { code: "TEL", name: "TEL", count: 0, percentage: 0 },
+        { code: "RCI", name: "RCI", count: 0, percentage: 0 },
+      ];
+
+  return {
+    total: 0,
+    totalAssets: 0,
+    inUse: 0,
+    available: 0,
+    maintenance: 0,
+    missing: 0,
+    disposed: 0,
+    duplicateTags: 0,
+    missingSerials: 0,
+    requiringAttention: 0,
+    totalAttentionIssues: 0,
+    utilizationRate: 0,
+    byCompany: defaultCompanies,
+    byCategory: [],
+    byStatus: [
+      { status: "IN_USE", count: 0 },
+      { status: "AVAILABLE", count: 0 },
+      { status: "MAINTENANCE", count: 0 },
+      { status: "MISSING", count: 0 },
+      { status: "DISPOSED", count: 0 },
+    ],
+    byCondition: {
+      EXCELLENT: 0,
+      GOOD: 0,
+      FAIR: 0,
+      POOR: 0,
+      DAMAGED: 0,
+    },
+    recentAssignments: [],
+    totalPurchaseCost: null,
+    totalNetBookValue: null,
+    financials: null,
+  };
 }
 
 /**
@@ -142,15 +191,14 @@ export async function getAssets(filters: AssetFilters): Promise<AssetsQueryResul
 
   if (isSupabaseConfigured()) {
     try {
-      // Build main query on assets_view
+      // 1. Build main query on assets_view
       let query = supabase
         .from("assets_view")
         .select(
           `
           *,
           company:companies (id, code, name),
-          assignedEmployee:employees (id, employee_id, name, department),
-          photos:asset_photos (*)
+          assignedEmployee:employees (id, employee_id, name, department)
         `,
           { count: "exact" }
         )
@@ -175,10 +223,41 @@ export async function getAssets(filters: AssetFilters): Promise<AssetsQueryResul
 
       query = query.order("created_at", { ascending: false }).range(from, to);
 
-      const { data, count, error } = await query;
+      let { data, count, error } = await query;
+
+      // Graceful fallback if embedded join encounters permission issues on mount
       if (error) {
-        console.error("Supabase assets query error:", error);
-        throw error;
+        console.warn("Primary assets_view query with embeds encountered error, retrying with scalar fields:", error.message);
+        let fallbackQuery = supabase
+          .from("assets_view")
+          .select("*, company:companies (id, code, name)", { count: "exact" })
+          .eq("is_archived", false);
+
+        if (filters.companyId && filters.companyId !== "ALL") {
+          fallbackQuery = fallbackQuery.eq("company_id", filters.companyId);
+        }
+        if (filters.status && filters.status !== "ALL") {
+          fallbackQuery = fallbackQuery.eq("status", filters.status);
+        }
+        if (filters.category && filters.category !== "ALL") {
+          fallbackQuery = fallbackQuery.eq("category", filters.category);
+        }
+        if (filters.isDuplicateTag) {
+          fallbackQuery = fallbackQuery.eq("is_duplicate_tag", true);
+        }
+        if (filters.search && filters.search.trim()) {
+          const s = `%${filters.search.trim()}%`;
+          fallbackQuery = fallbackQuery.or(`asset_name.ilike.${s},asset_tag.ilike.${s},model.ilike.${s},serial_number.ilike.${s}`);
+        }
+
+        fallbackQuery = fallbackQuery.order("created_at", { ascending: false }).range(from, to);
+
+        const fb = await fallbackQuery;
+        if (!fb.error && fb.data) {
+          data = fb.data;
+          count = fb.count;
+          error = null;
+        }
       }
 
       const total = count || 0;
@@ -193,7 +272,7 @@ export async function getAssets(filters: AssetFilters): Promise<AssetsQueryResul
         total,
         page,
         totalPages,
-        stats,
+        stats: stats || createEmptyStats(),
       };
     } catch (err) {
       console.error("Failed to fetch assets from Supabase:", err);
@@ -219,11 +298,11 @@ export async function getAssets(filters: AssetFilters): Promise<AssetsQueryResul
         total: json.total || 0,
         page: json.page || 1,
         totalPages: json.totalPages || 1,
-        stats: json.stats || null,
+        stats: json.stats || createEmptyStats(),
       };
     }
   } catch (err) {
-    console.warn("Fallback /api/assets error:", err);
+    console.warn("Local fallback /api/assets error:", err);
   }
 
   return {
@@ -231,7 +310,7 @@ export async function getAssets(filters: AssetFilters): Promise<AssetsQueryResul
     total: 0,
     page: 1,
     totalPages: 1,
-    stats: null,
+    stats: createEmptyStats(),
   };
 }
 
@@ -326,7 +405,7 @@ export async function createAsset(payload: any): Promise<{ asset: AssetDTO | nul
         is_archived: false,
       };
 
-      const { data, error } = await supabase.from("assets").insert(insertData).select().single();
+      const { data, error } = await supabase.from("assets").insert(insertData).select("id").single();
       if (error) {
         return { asset: null, error: error.message };
       }
@@ -476,26 +555,62 @@ export async function archiveAsset(id: string): Promise<{ success: boolean; erro
 /**
  * Compute executive & operational stats across active company scope
  */
-async function computeStats(companyId?: string) {
+export async function computeStats(companyId?: string): Promise<DashboardStats> {
   try {
     let query = supabase
       .from("assets_view")
-      .select("id, status, physical_condition, is_duplicate_tag, category, purchase_cost, net_book_value")
+      .select("id, company_id, status, physical_condition, is_duplicate_tag, category, serial_number, purchase_cost, net_book_value")
       .eq("is_archived", false);
 
     if (companyId && companyId !== "ALL") {
       query = query.eq("company_id", companyId);
     }
 
-    const { data: rows, error } = await query;
-    if (error || !rows) return null;
+    const [assetsRes, companiesRes, asgRes] = await Promise.all([
+      query,
+      supabase.from("companies").select("id, code, name"),
+      supabase
+        .from("asset_assignments")
+        .select(`
+          id,
+          action_type,
+          performed_at,
+          condition_at_action,
+          notes,
+          asset:assets_view (id, asset_tag, asset_name, category, company_id),
+          employee:employees (id, name, employee_id)
+        `)
+        .order("performed_at", { ascending: false })
+        .limit(10),
+    ]);
 
+    const rows = assetsRes.data || [];
+    const companies = companiesRes.data || [];
+
+    const companyIdToCode = new Map<string, string>();
+    for (const c of companies) {
+      companyIdToCode.set(c.id, c.code);
+    }
+
+    const companyCountMap = new Map<string, { code: string; name: string; count: number }>();
+    for (const c of companies) {
+      companyCountMap.set(c.code, { code: c.code, name: c.name, count: 0 });
+    }
+    // Ensure all 4 primary entities are always represented
+    if (companyCountMap.size === 0) {
+      for (const code of ["GMD", "GMC", "TEL", "RCI"]) {
+        companyCountMap.set(code, { code, name: code, count: 0 });
+      }
+    }
+
+    const totalCount = rows.length;
     let inUse = 0;
     let available = 0;
     let maintenance = 0;
-    let archived = 0;
-    let disposed = 0;
     let missing = 0;
+    let disposed = 0;
+    let duplicateTags = 0;
+    let missingSerials = 0;
 
     let excellent = 0;
     let good = 0;
@@ -511,35 +626,42 @@ async function computeStats(companyId?: string) {
     const attentionAssetIds = new Set<string>();
 
     for (const r of rows) {
-      // Status
       if (r.status === "IN_USE") inUse++;
       else if (r.status === "AVAILABLE") available++;
       else if (r.status === "MAINTENANCE") maintenance++;
-      else if (r.status === "ARCHIVED") archived++;
-      else if (r.status === "DISPOSED") disposed++;
       else if (r.status === "MISSING") missing++;
+      else if (r.status === "DISPOSED") disposed++;
 
-      // Condition
+      if (r.is_duplicate_tag) duplicateTags++;
+      if (!r.serial_number || r.serial_number.trim() === "") missingSerials++;
+
       if (r.physical_condition === "EXCELLENT") excellent++;
       else if (r.physical_condition === "GOOD") good++;
       else if (r.physical_condition === "FAIR") fair++;
       else if (r.physical_condition === "POOR") poor++;
       else if (r.physical_condition === "DAMAGED") damaged++;
 
-      // Category
-      categoryMap[r.category] = (categoryMap[r.category] || 0) + 1;
+      if (r.category) {
+        categoryMap[r.category] = (categoryMap[r.category] || 0) + 1;
+      }
 
-      // Attention required (distinct count)
+      const compCode = companyIdToCode.get(r.company_id) || "Other";
+      const existing = companyCountMap.get(compCode) || { code: compCode, name: compCode, count: 0 };
+      existing.count++;
+      companyCountMap.set(compCode, existing);
+
       if (
         r.status === "MAINTENANCE" ||
+        r.status === "MISSING" ||
         r.physical_condition === "POOR" ||
         r.physical_condition === "DAMAGED" ||
-        r.is_duplicate_tag
+        r.is_duplicate_tag ||
+        !r.serial_number ||
+        r.serial_number.trim() === ""
       ) {
         attentionAssetIds.add(r.id);
       }
 
-      // Financials (if permitted)
       if (r.purchase_cost !== null && r.purchase_cost !== undefined) {
         hasFinancials = true;
         totalPurchaseCost += Number(r.purchase_cost);
@@ -550,20 +672,61 @@ async function computeStats(companyId?: string) {
       }
     }
 
+    const byCompany = Array.from(companyCountMap.values()).map((c) => ({
+      ...c,
+      percentage: totalCount > 0 ? Math.round((c.count / totalCount) * 100) : 0,
+    }));
+
     const byCategory = Object.entries(categoryMap).map(([category, count]) => ({
       category,
       count,
+      percentage: totalCount > 0 ? Math.round((count / totalCount) * 100) : 0,
     }));
 
+    const recentAssignments: any[] = (asgRes.data || []).map((a: any) => ({
+      id: a.id,
+      actionType: a.action_type,
+      performedAt: a.performed_at,
+      conditionAtAction: a.condition_at_action,
+      notes: a.notes,
+      asset: a.asset ? {
+        id: a.asset.id,
+        assetTag: a.asset.asset_tag,
+        assetName: a.asset.asset_name,
+        category: a.asset.category,
+      } : undefined,
+      employee: a.employee ? {
+        id: a.employee.id,
+        name: a.employee.name,
+        employeeId: a.employee.employee_id,
+      } : undefined,
+    }));
+
+    const totalAttentionIssues = duplicateTags + maintenance + missing + missingSerials;
+    const utilizationRate = totalCount > 0 ? Math.round((inUse / totalCount) * 100) : 0;
+
     return {
-      totalAssets: rows.length,
+      total: totalCount,
+      totalAssets: totalCount,
       inUse,
       available,
       maintenance,
-      archived,
-      disposed,
       missing,
+      disposed,
+      duplicateTags,
+      missingSerials,
       requiringAttention: attentionAssetIds.size,
+      totalAttentionIssues,
+      utilizationRate,
+      byCompany,
+      byCategory,
+      byStatus: [
+        { status: "IN_USE", count: inUse },
+        { status: "AVAILABLE", count: available },
+        { status: "MAINTENANCE", count: maintenance },
+        { status: "MISSING", count: missing },
+        { status: "DISPOSED", count: disposed },
+      ],
       byCondition: {
         EXCELLENT: excellent,
         GOOD: good,
@@ -571,17 +734,14 @@ async function computeStats(companyId?: string) {
         POOR: poor,
         DAMAGED: damaged,
       },
-      byCategory,
-      financials: hasFinancials
-        ? {
-            totalPurchaseCost,
-            totalNetBookValue,
-          }
-        : null,
+      recentAssignments,
+      totalPurchaseCost: hasFinancials ? totalPurchaseCost : null,
+      totalNetBookValue: hasFinancials ? totalNetBookValue : null,
+      financials: hasFinancials ? { totalPurchaseCost, totalNetBookValue } : null,
     };
   } catch (err) {
     console.error("Error computing stats:", err);
-    return null;
+    return createEmptyStats();
   }
 }
 

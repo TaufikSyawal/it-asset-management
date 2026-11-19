@@ -245,3 +245,42 @@ export interface StockOpnameSessionDTO {
   stats?: StockOpnameSessionStats;
 }
 
+export interface DashboardStats {
+  total: number;
+  totalAssets: number;
+  inUse: number;
+  available: number;
+  maintenance: number;
+  missing: number;
+  disposed: number;
+  duplicateTags: number;
+  missingSerials: number;
+  requiringAttention: number;
+  totalAttentionIssues: number;
+  utilizationRate: number;
+  byCompany: Array<{
+    code: string;
+    name: string;
+    count: number;
+    percentage: number;
+    color?: string;
+  }>;
+  byCategory: Array<{
+    category: string;
+    count: number;
+    percentage: number;
+  }>;
+  byStatus: Array<{
+    status: string;
+    count: number;
+  }>;
+  byCondition: Record<string, number>;
+  recentAssignments: any[];
+  totalPurchaseCost: number | null;
+  totalNetBookValue: number | null;
+  financials?: {
+    totalPurchaseCost: number;
+    totalNetBookValue: number;
+  } | null;
+}
+

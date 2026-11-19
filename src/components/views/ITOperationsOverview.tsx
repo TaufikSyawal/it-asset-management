@@ -24,6 +24,7 @@ import {
 
 interface ITOperationsOverviewProps {
   stats: any;
+  loading?: boolean;
   currentRole: UserRole;
   selectedCompanyName: string;
   onAddAsset: () => void;
@@ -37,6 +38,7 @@ interface ITOperationsOverviewProps {
 
 export default function ITOperationsOverview({
   stats,
+  loading = false,
   currentRole,
   selectedCompanyName,
   onAddAsset,
@@ -49,7 +51,23 @@ export default function ITOperationsOverview({
 }: ITOperationsOverviewProps) {
   const permissions = ROLE_PERMISSIONS[currentRole];
 
-  if (!stats) return null;
+  if (loading && !stats) {
+    return (
+      <div className="py-16 text-center text-slate-400 animate-in fade-in duration-150">
+        <div className="inline-block animate-spin rounded-full h-8 w-8 border-2 border-brand-500 border-t-transparent" />
+        <p className="mt-3 text-xs font-medium">Loading operational metrics...</p>
+      </div>
+    );
+  }
+
+  const safeStats = stats || {
+    inUse: 0,
+    available: 0,
+    maintenance: 0,
+    missingSerials: 0,
+    duplicateTags: 0,
+    recentAssignments: [],
+  };
 
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return "—";
@@ -61,7 +79,7 @@ export default function ITOperationsOverview({
     });
   };
 
-  const recentList: any[] = stats.recentAssignments || [];
+  const recentList: any[] = safeStats.recentAssignments || [];
   const assignmentsCount = recentList.filter((a) => a.actionType === "ASSIGN").length;
   const transfersCount = recentList.filter((a) => a.actionType === "TRANSFER").length;
   const returnsCount = recentList.filter((a) => a.actionType === "RETURN").length;
@@ -170,7 +188,7 @@ export default function ITOperationsOverview({
             </span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-slate-900">{stats.inUse}</span>
+            <span className="text-2xl font-bold text-slate-900">{safeStats.inUse}</span>
             <span className="text-xs text-emerald-600 font-medium">In Custody</span>
           </div>
         </div>
@@ -189,7 +207,7 @@ export default function ITOperationsOverview({
             </span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-slate-900">{stats.available}</span>
+            <span className="text-2xl font-bold text-slate-900">{safeStats.available}</span>
             <span className="text-xs text-blue-600 font-medium">Ready</span>
           </div>
         </div>
@@ -208,7 +226,7 @@ export default function ITOperationsOverview({
             </span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-slate-900">{stats.maintenance}</span>
+            <span className="text-2xl font-bold text-slate-900">{safeStats.maintenance}</span>
             <span className="text-xs text-amber-600 font-medium">Diagnostic</span>
           </div>
         </div>
@@ -227,7 +245,7 @@ export default function ITOperationsOverview({
             </span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-slate-900">{stats.missingSerials}</span>
+            <span className="text-2xl font-bold text-slate-900">{safeStats.missingSerials}</span>
             <span className="text-xs text-slate-500 font-medium">Unrecorded</span>
           </div>
         </div>
@@ -246,7 +264,7 @@ export default function ITOperationsOverview({
             </span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-rose-700">{stats.duplicateTags}</span>
+            <span className="text-2xl font-bold text-rose-700">{safeStats.duplicateTags}</span>
             <span className="text-xs text-rose-600 font-medium">Review</span>
           </div>
         </div>
@@ -322,72 +340,94 @@ export default function ITOperationsOverview({
               <span>Operational Task Queue</span>
             </h3>
             <span className="text-[11px] font-semibold text-slate-500">
-              {stats.requiringAttention} Actionable Items
+              {safeStats.requiringAttention || 0} Actionable Items
             </span>
           </div>
 
           <div className="space-y-3">
-            {/* Task: Duplicate Tag Audit */}
-            <div className="p-3.5 bg-rose-50/60 border border-rose-200 rounded-xl space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-rose-950 flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-rose-600" />
-                  Duplicate Tag Verification
-                </span>
-                <span className="text-[10px] bg-rose-200/80 text-rose-800 font-bold px-1.5 py-0.2 rounded-full">
-                  {stats.duplicateTags}
-                </span>
+            {(safeStats.requiringAttention || 0) === 0 ? (
+              <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-xl flex items-center gap-3 text-xs">
+                <div className="p-2 bg-emerald-100 rounded-lg text-emerald-700 shrink-0">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <span className="font-bold text-emerald-950 block">Operational Queue Clear</span>
+                  <span className="text-emerald-700 text-[11px]">
+                    No immediate maintenance diagnostics, duplicate tags, or audit flags pending.
+                  </span>
+                </div>
               </div>
-              <p className="text-[11px] text-rose-800 leading-snug">
-                Review legacy imported assets with identical asset tags to verify serial numbers and confirm distinct physical identities.
-              </p>
-              <button
-                onClick={() => onNavigateToInventory({ duplicateOnly: true })}
-                className="text-xs font-bold text-rose-700 hover:text-rose-900 inline-flex items-center gap-1 pt-1"
-              >
-                <span>Open Duplicate Filter</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            ) : (
+              <>
+                {/* Task: Duplicate Tag Audit */}
+                {(safeStats.duplicateTags || 0) > 0 && (
+                  <div className="p-3.5 bg-rose-50/60 border border-rose-200 rounded-xl space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-rose-950 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-rose-600" />
+                        Duplicate Tag Verification
+                      </span>
+                      <span className="text-[10px] bg-rose-200/80 text-rose-800 font-bold px-1.5 py-0.2 rounded-full">
+                        {safeStats.duplicateTags}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-rose-800 leading-snug">
+                      Review legacy imported assets with identical asset tags to verify serial numbers and confirm distinct physical identities.
+                    </p>
+                    <button
+                      onClick={() => onNavigateToInventory({ duplicateOnly: true })}
+                      className="text-xs font-bold text-rose-700 hover:text-rose-900 inline-flex items-center gap-1 pt-1"
+                    >
+                      <span>Open Duplicate Filter</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
 
-            {/* Task: Maintenance Diagnostic Clearance */}
-            <div className="p-3.5 bg-amber-50/60 border border-amber-200 rounded-xl space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-amber-600" />
-                  Service & Repair Diagnostics
-                </span>
-                <span className="text-[10px] bg-amber-200/80 text-amber-800 font-bold px-1.5 py-0.2 rounded-full">
-                  {stats.maintenance}
-                </span>
-              </div>
-              <p className="text-[11px] text-amber-800 leading-snug">
-                Review devices currently undergoing diagnostic bench work, battery replacements, or vendor RMA repair.
-              </p>
-              <button
-                onClick={onNavigateToMaintenance}
-                className="text-xs font-bold text-amber-700 hover:text-amber-900 inline-flex items-center gap-1 pt-1"
-              >
-                <span>View Maintenance Queue</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
+                {/* Task: Maintenance Diagnostic Clearance */}
+                {(safeStats.maintenance || 0) > 0 && (
+                  <div className="p-3.5 bg-amber-50/60 border border-amber-200 rounded-xl space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-amber-600" />
+                        Service & Repair Diagnostics
+                      </span>
+                      <span className="text-[10px] bg-amber-200/80 text-amber-800 font-bold px-1.5 py-0.2 rounded-full">
+                        {safeStats.maintenance}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-amber-800 leading-snug">
+                      Review devices currently undergoing diagnostic bench work, battery replacements, or vendor RMA repair.
+                    </p>
+                    <button
+                      onClick={onNavigateToMaintenance}
+                      className="text-xs font-bold text-amber-700 hover:text-amber-900 inline-flex items-center gap-1 pt-1"
+                    >
+                      <span>View Maintenance Queue</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
 
-            {/* Task: Unnumbered Hardware Audit */}
-            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-slate-400" />
-                  Hardware S/N Physical Audit
-                </span>
-                <span className="text-[10px] bg-slate-200 text-slate-700 font-bold px-1.5 py-0.2 rounded-full">
-                  {stats.missingSerials}
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-600 leading-snug">
-                Record serial numbers for legacy assets before the upcoming physical Stock Opname audit cycle.
-              </p>
-            </div>
+                {/* Task: Unnumbered Hardware Audit */}
+                {(safeStats.missingSerials || 0) > 0 && (
+                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-slate-400" />
+                        Hardware S/N Physical Audit
+                      </span>
+                      <span className="text-[10px] bg-slate-200 text-slate-700 font-bold px-1.5 py-0.2 rounded-full">
+                        {safeStats.missingSerials}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 leading-snug">
+                      Record serial numbers for legacy assets before the upcoming physical Stock Opname audit cycle.
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
       </div>

@@ -139,84 +139,110 @@ export default function EmployeesView({
         </div>
       </div>
 
-      {/* Employee Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredEmployees.map((emp) => {
-          const assignedDevices = assets.filter((a) => a.assignedEmployeeId === emp.id);
-
-          return (
-            <div
-              key={emp.id}
-              className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs hover:border-slate-300 transition-all flex flex-col justify-between"
+      {/* Employee Cards Grid or Empty State */}
+      {filteredEmployees.length === 0 ? (
+        <div className="p-12 text-center bg-white border border-slate-200 rounded-2xl shadow-2xs">
+          <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3 text-slate-400">
+            <Users className="w-6 h-6" />
+          </div>
+          <h3 className="text-sm font-bold text-slate-800">No Personnel Found</h3>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 mb-4">
+            {search
+              ? "No employees match your search query."
+              : "No employees registered for the selected company entity."}
+          </p>
+          {permissions.canCreateAssets && (
+            <button
+              onClick={() => {
+                setNewCompanyId(companyFilter !== "ALL" ? companyFilter : companies[0]?.id || "");
+                setIsAddModalOpen(true);
+              }}
+              className="px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors"
             >
-              <div>
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <span className="font-bold text-sm text-slate-900 block">{emp.name}</span>
-                    <span className="text-[11px] font-mono text-slate-500">{emp.employeeId}</span>
-                  </div>
-                  <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-800 border border-slate-200">
-                    {emp.company?.code || "-"}
-                  </span>
-                </div>
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add First Employee</span>
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredEmployees.map((emp) => {
+            const assignedDevices = assets.filter((a) => a.assignedEmployeeId === emp.id);
 
-                <div className="mt-3 space-y-1 text-xs text-slate-600">
-                  <div className="flex items-center gap-1.5">
-                    <Building className="w-3.5 h-3.5 text-slate-400" />
-                    <span>{emp.department || "General Operations"}</span>
-                  </div>
-                  {emp.email && (
-                    <div className="flex items-center gap-1.5 text-slate-500">
-                      <Mail className="w-3.5 h-3.5 text-slate-400" />
-                      <span className="truncate">{emp.email}</span>
+            return (
+              <div
+                key={emp.id}
+                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-2xs hover:border-slate-300 transition-all flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className="font-bold text-sm text-slate-900 block">{emp.name}</span>
+                      <span className="text-[11px] font-mono text-slate-500">{emp.employeeId}</span>
                     </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Custody Summary */}
-              <div className="mt-4 pt-3 border-t border-slate-100">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                    Assigned Hardware ({assignedDevices.length})
-                  </span>
-                  {permissions.canAssignAssets && (
-                    <button
-                      onClick={() => onAssignToEmployee(emp.id)}
-                      className="text-[11px] font-bold text-brand-600 hover:text-brand-800 flex items-center gap-0.5"
-                    >
-                      <UserCheck className="w-3 h-3" />
-                      <span>Assign Device</span>
-                    </button>
-                  )}
-                </div>
-
-                {assignedDevices.length > 0 ? (
-                  <div className="space-y-1.5">
-                    {assignedDevices.map((dev) => (
-                      <div
-                        key={dev.id}
-                        onClick={() => onViewAssetDetails(dev)}
-                        className="p-2 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-100 flex items-center justify-between text-xs cursor-pointer transition-colors"
-                      >
-                        <div className="flex items-center gap-2 truncate">
-                          <Laptop className="w-3.5 h-3.5 text-brand-600 shrink-0" />
-                          <span className="font-semibold text-slate-800 truncate">{dev.assetName}</span>
-                        </div>
-                        <span className="font-mono text-[10px] text-slate-500 shrink-0 font-bold">
-                          {dev.assetTag}
-                        </span>
-                      </div>
-                    ))}
+                    <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-800 border border-slate-200">
+                      {emp.company?.code || "-"}
+                    </span>
                   </div>
-                ) : (
-                  <span className="text-xs text-slate-400 italic block">No active hardware in custody</span>
-                )}
+
+                  <div className="mt-3 space-y-1 text-xs text-slate-600">
+                    <div className="flex items-center gap-1.5">
+                      <Building className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{emp.department || "General Operations"}</span>
+                    </div>
+                    {emp.email && (
+                      <div className="flex items-center gap-1.5 text-slate-500">
+                        <Mail className="w-3.5 h-3.5 text-slate-400" />
+                        <span className="truncate">{emp.email}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Custody Summary */}
+                <div className="mt-4 pt-3 border-t border-slate-100">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                      Assigned Hardware ({assignedDevices.length})
+                    </span>
+                    {permissions.canAssignAssets && (
+                      <button
+                        onClick={() => onAssignToEmployee(emp.id)}
+                        className="text-[11px] font-bold text-brand-600 hover:text-brand-800 flex items-center gap-0.5"
+                      >
+                        <UserCheck className="w-3 h-3" />
+                        <span>Assign Device</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {assignedDevices.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {assignedDevices.map((dev) => (
+                        <div
+                          key={dev.id}
+                          onClick={() => onViewAssetDetails(dev)}
+                          className="p-2 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-100 flex items-center justify-between text-xs cursor-pointer transition-colors"
+                        >
+                          <div className="flex items-center gap-2 truncate">
+                            <Laptop className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+                            <span className="font-semibold text-slate-800 truncate">{dev.assetName}</span>
+                          </div>
+                          <span className="font-mono text-[10px] text-slate-500 shrink-0 font-bold">
+                            {dev.assetTag}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-xs text-slate-400 italic block">No active hardware in custody</span>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Modal: Add New Employee */}
       {isAddModalOpen && (

@@ -388,8 +388,7 @@ $$;
 -- 5. SECURE DATABASE VIEWS (WITH security_invoker = true)
 
 -- Masked Assets View preventing direct API financial leaks
-create or replace view public.assets_view
-with (security_invoker = true) as
+create or replace view public.assets_view as
 select
   a.id,
   a.asset_tag,
@@ -422,7 +421,12 @@ select
   case when public.can_view_financials() then a.accumulated_depreciation else null end as accumulated_depreciation,
   case when public.can_view_financials() then a.net_book_value else null end as net_book_value,
   case when public.can_view_financials() then a.depreciation_start_date else null end as depreciation_start_date
-from public.assets a;
+from public.assets a
+where public.can_access_company(a.company_id)
+  and (
+    public.get_current_role() != 'EMPLOYEE'
+    or a.assigned_employee_id = public.get_current_employee_id()
+  );
 
 -- 6. ROW LEVEL SECURITY (RLS) POLICIES
 
@@ -1045,7 +1049,7 @@ create policy "Admins can delete asset photos"
   );
 
 -- ==============================================================================
--- 10. AUTH TRIGGER: AUTO-PROVISION INITIAL SUPER ADMIN & PROFILES
+-- 10. AUTH TRIGGER: AUTO-PROVISION DEFAULT EMPLOYEE PROFILES
 -- ==============================================================================
 create or replace function public.handle_new_auth_user()
 returns trigger
@@ -1054,13 +1058,14 @@ security definer
 set search_path = public
 as $$
 declare
-  v_is_first boolean;
   v_name text;
 begin
-  select not exists (select 1 from public.user_profiles) into v_is_first;
-
   v_name := coalesce(new.raw_user_meta_data->>'name', split_part(new.email, '@', 1));
 
+  -- PRODUCTION HARDENING: Automatic Super Admin elevation is permanently DISABLED.
+  -- All newly provisioned users strictly default to EMPLOYEE with zero company access.
+  -- Elevated roles (SUPER_ADMIN, IT_ADMIN, MANAGEMENT, FINANCE, AUDITOR)
+  -- and multi-company scopes must be explicitly granted by an authorized Super Admin.
   insert into public.user_profiles (
     id,
     email,
@@ -1070,15 +1075,15 @@ begin
     allowed_companies
   ) values (
     new.id,
-    new.email,
+    lower(new.email),
     v_name,
-    case when v_is_first then 'SUPER_ADMIN'::public.user_role else 'EMPLOYEE'::public.user_role end,
-    case when v_is_first then true else false end,
+    'EMPLOYEE'::public.user_role,
+    false,
     '{}'
   )
   on conflict (id) do update
   set
-    email = excluded.email,
+    email = lower(excluded.email),
     updated_at = now();
 
   return new;
@@ -1095,6 +1100,8 @@ create trigger on_auth_user_created
 -- ==============================================================================
 grant usage on schema public to anon, authenticated;
 grant select, insert, update, delete on all tables in schema public to authenticated;
+revoke select on public.assets from authenticated; -- Direct SELECT on base table is revoked to enforce assets_view masking
+grant select on public.assets_view to authenticated;
 grant select on public.companies to anon;
 grant select on public.assets_view to anon;
 grant usage, select on all sequences in schema public to authenticated, anon;

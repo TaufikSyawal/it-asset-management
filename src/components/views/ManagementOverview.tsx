@@ -22,6 +22,7 @@ import {
 
 interface ManagementOverviewProps {
   stats: any;
+  loading?: boolean;
   currentRole: UserRole;
   selectedCompanyName: string;
   onNavigateToInventory: (filter?: { status?: string; duplicateOnly?: boolean }) => void;
@@ -30,6 +31,7 @@ interface ManagementOverviewProps {
 
 export default function ManagementOverview({
   stats,
+  loading = false,
   currentRole,
   selectedCompanyName,
   onNavigateToInventory,
@@ -37,14 +39,30 @@ export default function ManagementOverview({
 }: ManagementOverviewProps) {
   const permissions = ROLE_PERMISSIONS[currentRole];
 
-  if (!stats) {
+  if (loading && !stats) {
     return (
-      <div className="py-16 text-center text-slate-400">
+      <div className="py-16 text-center text-slate-400 animate-in fade-in duration-150">
         <div className="inline-block animate-spin rounded-full h-8 w-8 border-2 border-brand-500 border-t-transparent" />
         <p className="mt-3 text-xs font-medium">Computing management metrics...</p>
       </div>
     );
   }
+
+  const safeStats = stats || {
+    total: 0,
+    inUse: 0,
+    available: 0,
+    maintenance: 0,
+    duplicateTags: 0,
+    missingSerials: 0,
+    requiringAttention: 0,
+    totalAttentionIssues: 0,
+    utilizationRate: 0,
+    byCompany: [],
+    byCategory: [],
+    totalPurchaseCost: null,
+    totalNetBookValue: null,
+  };
 
   const formatCurrency = (val?: number | null) => {
     if (val === undefined || val === null) return "—";
@@ -55,15 +73,15 @@ export default function ManagementOverview({
     }).format(val);
   };
 
-  const total = stats.total || 0;
-  const inUse = stats.inUse || 0;
-  const available = stats.available || 0;
-  const maintenance = stats.maintenance || 0;
-  const duplicateTags = stats.duplicateTags || 0;
-  const missingSerials = stats.missingSerials || 0;
-  const requiringAttention = stats.requiringAttention || 0;
-  const totalAttentionIssues = stats.totalAttentionIssues || (duplicateTags + maintenance + missingSerials);
-  const utilizationRate = stats.utilizationRate || (total > 0 ? Math.round((inUse / total) * 100) : 0);
+  const total = safeStats.total || 0;
+  const inUse = safeStats.inUse || 0;
+  const available = safeStats.available || 0;
+  const maintenance = safeStats.maintenance || 0;
+  const duplicateTags = safeStats.duplicateTags || 0;
+  const missingSerials = safeStats.missingSerials || 0;
+  const requiringAttention = safeStats.requiringAttention || 0;
+  const totalAttentionIssues = safeStats.totalAttentionIssues || (duplicateTags + maintenance + missingSerials);
+  const utilizationRate = safeStats.utilizationRate || (total > 0 ? Math.round((inUse / total) * 100) : 0);
 
   const getDisplayPercentage = (count: number, totalCount: number) => {
     if (totalCount === 0) return "0%";
@@ -112,7 +130,7 @@ export default function ManagementOverview({
 
   // Prepare donut segments
   const companyData: Array<{ code: string; count: number; percentage: number; color: string }> = (
-    stats.byCompany || []
+    safeStats.byCompany || []
   ).map((c: any, idx: number) => ({
     code: c.code,
     count: c.count,
@@ -302,7 +320,7 @@ export default function ManagementOverview({
                 Total Acquisition Cost
               </span>
               <span className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
-                {formatCurrency(stats.totalPurchaseCost)}
+                {formatCurrency(safeStats.totalPurchaseCost)}
               </span>
             </div>
 
@@ -311,7 +329,7 @@ export default function ManagementOverview({
                 Net Book Value (NBV)
               </span>
               <span className="text-xl sm:text-2xl font-extrabold text-emerald-400 tracking-tight">
-                {formatCurrency(stats.totalNetBookValue)}
+                {formatCurrency(safeStats.totalNetBookValue)}
               </span>
             </div>
           </div>
@@ -385,25 +403,35 @@ export default function ManagementOverview({
           </div>
 
           <div className="space-y-3 pt-1">
-            {(stats.byCategory || []).map((cat: any) => (
-              <div key={cat.category} className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-slate-700 capitalize">
-                    {cat.category.toLowerCase().replace("_", " ")}
-                  </span>
-                  <div className="flex items-center gap-1.5 font-mono">
-                    <span className="font-bold text-slate-900">{cat.count}</span>
-                    <span className="text-[11px] text-slate-400">({getDisplayPercentage(cat.count, total)})</span>
+            {(safeStats.byCategory || []).length === 0 ? (
+              <div className="py-8 text-center text-slate-400">
+                <Layers className="w-8 h-8 mx-auto text-slate-300 stroke-1" />
+                <p className="mt-2 text-xs font-semibold text-slate-600">No hardware registered yet</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Import or add hardware assets to populate category allocation metrics.
+                </p>
+              </div>
+            ) : (
+              (safeStats.byCategory || []).map((cat: any) => (
+                <div key={cat.category} className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-slate-700 capitalize">
+                      {cat.category.toLowerCase().replace("_", " ")}
+                    </span>
+                    <div className="flex items-center gap-1.5 font-mono">
+                      <span className="font-bold text-slate-900">{cat.count}</span>
+                      <span className="text-[11px] text-slate-400">({getDisplayPercentage(cat.count, total)})</span>
+                    </div>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-brand-600 h-2 rounded-full transition-all duration-500"
+                      style={{ width: `${cat.percentage}%` }}
+                    />
                   </div>
                 </div>
-                <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                  <div
-                    className="bg-brand-600 h-2 rounded-full transition-all duration-500"
-                    style={{ width: `${cat.percentage}%` }}
-                  />
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>
@@ -443,56 +471,75 @@ export default function ManagementOverview({
           </div>
 
           <div className="space-y-2.5">
-            {/* Maintenance notice */}
-            <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl flex items-center justify-between text-xs">
-              <div>
-                <span className="font-bold text-amber-950 block">Hardware in Maintenance Queue</span>
-                <span className="text-amber-800 text-[11px]">
-                  {maintenance} asset{maintenance > 1 ? "s" : ""} undergoing repair or diagnostics
-                </span>
+            {requiringAttention === 0 ? (
+              <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-xl flex items-center gap-3 text-xs">
+                <div className="p-2 bg-emerald-100 rounded-lg text-emerald-700 shrink-0">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                </div>
+                <div>
+                  <span className="font-bold text-emerald-950 block">Hardware Fleet Healthy & Accounted For</span>
+                  <span className="text-emerald-700 text-[11px]">
+                    Zero duplicate tags, missing serial numbers, or unresolved maintenance flags in this scope.
+                  </span>
+                </div>
               </div>
-              <button
-                onClick={onNavigateToMaintenance}
-                className="text-amber-900 hover:text-amber-950 font-bold text-xs flex items-center gap-1 transition-colors"
-              >
-                <span>View</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            ) : (
+              <>
+                {maintenance > 0 && (
+                  <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl flex items-center justify-between text-xs">
+                    <div>
+                      <span className="font-bold text-amber-950 block">Hardware in Maintenance Queue</span>
+                      <span className="text-amber-800 text-[11px]">
+                        {maintenance} asset{maintenance > 1 ? "s" : ""} undergoing repair or diagnostics
+                      </span>
+                    </div>
+                    <button
+                      onClick={onNavigateToMaintenance}
+                      className="text-amber-900 hover:text-amber-950 font-bold text-xs flex items-center gap-1 transition-colors"
+                    >
+                      <span>View</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
 
-            {/* Duplicate tags notice */}
-            <div className="p-3 bg-rose-50/70 border border-rose-200 rounded-xl flex items-center justify-between text-xs">
-              <div>
-                <span className="font-bold text-rose-950 block">Duplicate Asset Tag Review</span>
-                <span className="text-rose-800 text-[11px]">
-                  {duplicateTags} record{duplicateTags > 1 ? "s" : ""} flagged from legacy spreadsheet imports
-                </span>
-              </div>
-              <button
-                onClick={() => onNavigateToInventory({ duplicateOnly: true })}
-                className="text-rose-900 hover:text-rose-950 font-bold text-xs flex items-center gap-1 transition-colors"
-              >
-                <span>Review</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
+                {duplicateTags > 0 && (
+                  <div className="p-3 bg-rose-50/70 border border-rose-200 rounded-xl flex items-center justify-between text-xs">
+                    <div>
+                      <span className="font-bold text-rose-950 block">Duplicate Asset Tag Review</span>
+                      <span className="text-rose-800 text-[11px]">
+                        {duplicateTags} record{duplicateTags > 1 ? "s" : ""} flagged from legacy spreadsheet imports
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => onNavigateToInventory({ duplicateOnly: true })}
+                      className="text-rose-900 hover:text-rose-950 font-bold text-xs flex items-center gap-1 transition-colors"
+                    >
+                      <span>Review</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
 
-            {/* Unrecorded serials notice */}
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
-              <div>
-                <span className="font-bold text-slate-800 block">Missing Hardware Serial Numbers</span>
-                <span className="text-slate-600 text-[11px]">
-                  {missingSerials} asset{missingSerials > 1 ? "s" : ""} pending physical S/N verification
-                </span>
-              </div>
-              <button
-                onClick={() => onNavigateToInventory()}
-                className="text-slate-700 hover:text-slate-900 font-bold text-xs flex items-center gap-1 transition-colors"
-              >
-                <span>Audit</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
+                {missingSerials > 0 && (
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
+                    <div>
+                      <span className="font-bold text-slate-800 block">Missing Hardware Serial Numbers</span>
+                      <span className="text-slate-600 text-[11px]">
+                        {missingSerials} asset{missingSerials > 1 ? "s" : ""} pending physical S/N verification
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => onNavigateToInventory()}
+                      className="text-slate-700 hover:text-slate-900 font-bold text-xs flex items-center gap-1 transition-colors"
+                    >
+                      <span>Audit</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
       </div>
