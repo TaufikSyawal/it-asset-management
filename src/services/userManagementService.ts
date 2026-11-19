@@ -197,7 +197,8 @@ export async function updateUserProfile(
 }
 
 /**
- * Invite / Create new user via Edge Function (with client-side fallback)
+ * Invite / Create new user via secure backend Edge Function
+ * Administrative operations strictly require Super Admin authorization on backend
  */
 export async function inviteUser(payload: {
   email: string;
@@ -214,7 +215,6 @@ export async function inviteUser(payload: {
   const cleanName = payload.name?.trim() || cleanEmail.split("@")[0];
 
   try {
-    // Try Edge Function first (uses service_role safely on server side)
     const { data: edgeRes, error: edgeErr } = await supabase.functions.invoke("admin-user-ops", {
       body: {
         action: "invite_user",
@@ -226,35 +226,26 @@ export async function inviteUser(payload: {
       },
     });
 
-    if (!edgeErr && edgeRes && !edgeRes.error) {
-      return { success: true, message: edgeRes.message || `Invitation sent to ${cleanEmail}` };
-    }
-
-    // Fallback: Send Supabase Auth invite / password recovery email directly
-    console.warn("Edge Function unavailable or returned error, attempting direct client invite:", edgeErr?.message || edgeRes?.error);
-
-    const { error: resetErr } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-      redirectTo: typeof window !== "undefined" ? `${window.location.origin}/` : undefined,
-    });
-
-    if (resetErr) {
+    if (edgeErr || !edgeRes || edgeRes.error) {
+      const errMsg = edgeRes?.error || edgeErr?.message || "Failed to invite user via administrative Edge Function.";
+      console.error("Administrative Edge Function error during invite:", errMsg);
       return {
         success: false,
-        error: edgeRes?.error || edgeErr?.message || resetErr.message,
+        error: errMsg,
       };
     }
 
     return {
       success: true,
-      message: `Setup invitation sent to ${cleanEmail}. They can set their password and log in.`,
+      message: edgeRes.message || `Invitation successfully sent to ${cleanEmail}.`,
     };
   } catch (err: any) {
-    return { success: false, error: err.message || "Failed to invite user." };
+    return { success: false, error: err.message || "Failed to invite user via administrative Edge Function." };
   }
 }
 
 /**
- * Initiate password reset for a user
+ * Initiate administrative password reset for a user via secure backend Edge Function
  */
 export async function resetUserPassword(email: string): Promise<{ success: boolean; message?: string; recoveryUrl?: string; error?: string | null }> {
   if (!isSupabaseConfigured()) {
@@ -264,7 +255,6 @@ export async function resetUserPassword(email: string): Promise<{ success: boole
   const cleanEmail = email.trim().toLowerCase();
 
   try {
-    // 1. Try Edge Function (can return direct recovery URL or send email)
     const { data: edgeRes, error: edgeErr } = await supabase.functions.invoke("admin-user-ops", {
       body: {
         action: "reset_password",
@@ -272,40 +262,54 @@ export async function resetUserPassword(email: string): Promise<{ success: boole
       },
     });
 
-    if (!edgeErr && edgeRes && !edgeRes.error) {
+    if (edgeErr || !edgeRes || edgeRes.error) {
+      const errMsg = edgeRes?.error || edgeErr?.message || "Administrative password reset failed.";
+      console.error("Administrative Edge Function error during password reset:", errMsg);
       return {
-        success: true,
-        message: edgeRes.message,
-        recoveryUrl: edgeRes.recoveryUrl,
+        success: false,
+        error: errMsg,
       };
-    }
-
-    // 2. Fallback to standard client resetPasswordForEmail
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-      redirectTo: typeof window !== "undefined" ? `${window.location.origin}/` : undefined,
-    });
-
-    if (resetError) {
-      return { success: false, error: resetError.message };
     }
 
     return {
       success: true,
-      message: `Password reset email dispatched to ${cleanEmail}.`,
+      message: edgeRes.message || `Password recovery dispatched for ${cleanEmail}.`,
+      recoveryUrl: edgeRes.recoveryUrl,
     };
   } catch (err: any) {
-    return { success: false, error: err.message || "Failed to initiate password reset." };
+    return { success: false, error: err.message || "Failed to initiate administrative password reset." };
   }
 }
 
 /**
  * Toggle user active/deactivated status
+ * Coordinates with Edge Function for Auth ban duration and database profile status
  */
 export async function toggleUserStatus(
   userId: string,
   isActive: boolean,
   currentUserId?: string
 ): Promise<{ success: boolean; error?: string | null }> {
+  try {
+    const { data: edgeRes, error: edgeErr } = await supabase.functions.invoke("admin-user-ops", {
+      body: {
+        action: "toggle_user_status",
+        userId,
+        isActive,
+      },
+    });
+
+    if (edgeErr || !edgeRes || edgeRes.error) {
+      const errMsg = edgeRes?.error || edgeErr?.message;
+      // If error indicates last Super Admin protection, abort immediately
+      if (errMsg && errMsg.toLowerCase().includes("super admin")) {
+        return { success: false, error: errMsg };
+      }
+    }
+  } catch (err: any) {
+    console.warn("Edge function status sync note:", err.message);
+  }
+
   return updateUserProfile(userId, { isActive }, currentUserId);
 }
 

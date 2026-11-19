@@ -184,9 +184,32 @@ export default function AppShell() {
         }
       });
 
+      // Window focus and visibility listener to detect real-time role changes and deactivations
+      const handleWindowFocus = () => {
+        if (document.visibilityState === "visible" && mounted) {
+          getUserProfile(undefined, true)
+            .then((refreshedUser) => {
+              if (!mounted) return;
+              if (!refreshedUser) {
+                setAuthenticatedUser(null);
+                setIsAuthModalOpen(true);
+              } else {
+                setAuthenticatedUser(refreshedUser);
+                setCurrentRole(refreshedUser.role);
+              }
+            })
+            .catch(() => {});
+        }
+      };
+
+      window.addEventListener("focus", handleWindowFocus);
+      document.addEventListener("visibilitychange", handleWindowFocus);
+
       return () => {
         mounted = false;
         authSub.unsubscribe();
+        window.removeEventListener("focus", handleWindowFocus);
+        document.removeEventListener("visibilitychange", handleWindowFocus);
       };
     } else {
       // Local dev role fetch

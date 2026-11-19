@@ -106,10 +106,18 @@ export async function getUserProfile(userId?: string, forceRefresh: boolean = fa
       .single();
 
     if (error || !data) {
-      console.warn("Could not retrieve user profile from DB, checking cache:", error?.message);
-      if (!forceRefresh) {
+      // If profile is missing or row not found (PGRST116), immediately invalidate cache
+      if (error?.code === "PGRST116" || !data) {
+        console.warn("User profile not found in database. Invalidating session cache.");
+        memoryProfile = null;
+        setStoredProfile(null);
+        return null;
+      }
+
+      // For transient network failures, only allow offline fallback if browser is genuinely offline
+      if (!forceRefresh && typeof navigator !== "undefined" && !navigator.onLine) {
         const cached = memoryProfile || getStoredProfile();
-        if (cached && cached.id === targetId) {
+        if (cached && cached.id === targetId && cached.isActive !== false) {
           return cached;
         }
       }
@@ -141,9 +149,9 @@ export async function getUserProfile(userId?: string, forceRefresh: boolean = fa
     return profile;
   } catch (err) {
     console.error("Error fetching user profile:", err);
-    if (!forceRefresh) {
+    if (!forceRefresh && typeof navigator !== "undefined" && !navigator.onLine) {
       const cached = memoryProfile || getStoredProfile();
-      if (cached) return cached;
+      if (cached && cached.isActive !== false) return cached;
     }
     return null;
   }
