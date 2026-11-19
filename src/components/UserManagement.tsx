@@ -241,7 +241,7 @@ export default function UserManagement({
   // Handle Password Reset
   const handleResetPassword = async (user: UserProfileDTO) => {
     const confirm = window.confirm(
-      `Generate password recovery link for ${user.name} (${user.email})?`
+      `Send secure password recovery email to ${user.name} (${user.email})?`
     );
     if (!confirm) return;
 
@@ -250,11 +250,7 @@ export default function UserManagement({
       if (!res.success) {
         throw new Error(res.error || "Failed to initiate reset.");
       }
-      if (res.recoveryUrl) {
-        window.prompt("Direct Recovery Link generated (share privately with user):", res.recoveryUrl);
-      } else {
-        setActionSuccess(res.message || `Password reset link dispatched to ${user.email}.`);
-      }
+      setActionSuccess(res.message || `Password recovery email dispatched directly to ${user.email}.`);
       clearNotifications();
     } catch (err: any) {
       alert(`Password reset notice: ${err.message}`);
@@ -810,6 +806,17 @@ export default function UserManagement({
             </div>
 
             <form onSubmit={handleInviteSubmit} className="p-6 space-y-4 text-xs">
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-800 space-y-1">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <ShieldCheck className="w-4 h-4 text-blue-600" />
+                  <span>Mandatory Zero-Trust Provisioning</span>
+                </div>
+                <p className="text-[11px] text-blue-700 leading-relaxed">
+                  All newly invited users automatically receive the baseline <strong>EMPLOYEE</strong> role with <strong>zero company data access</strong>.
+                  After inviting the user, you can elevate their role and grant specific operating entities (GMD, GMC, TEL, RCI) at any time through <strong>Edit Permissions</strong>.
+                </p>
+              </div>
+
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Corporate Email Address *</label>
                 <input
@@ -831,76 +838,6 @@ export default function UserManagement({
                   placeholder="e.g. Maya Indah"
                   className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-brand-500 focus:outline-hidden"
                 />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">Initial Role</label>
-                <select
-                  value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value as UserRole)}
-                  className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold focus:ring-2 focus:ring-brand-500 focus:outline-hidden"
-                >
-                  {ROLES.map((r) => (
-                    <option key={r} value={r}>
-                      {r} {r === "EMPLOYEE" ? "(Default: Zero Company Access)" : ""}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Default configuration mandates EMPLOYEE role with zero company permissions until explicitly authorized.
-                </p>
-              </div>
-
-              {/* Initial Company Scope */}
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="font-bold text-slate-800 block">Grant All Companies Scope</span>
-                    <span className="text-[11px] text-slate-500">
-                      Defaults to false. Enable only for enterprise executives.
-                    </span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={inviteAllCompanies}
-                    onChange={(e) => setInviteAllCompanies(e.target.checked)}
-                    className="w-4 h-4 text-brand-600 rounded border-slate-300 focus:ring-brand-500"
-                  />
-                </div>
-
-                {!inviteAllCompanies && (
-                  <div className="pt-2 border-t border-slate-200/80">
-                    <label className="block font-semibold text-slate-700 mb-2">
-                      Assign Specific Operating Entities (Optional)
-                    </label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {companies.map((c) => {
-                        const isChecked = inviteAllowedCompanies.includes(c.code);
-                        return (
-                          <label
-                            key={c.id}
-                            className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
-                              isChecked
-                                ? "bg-brand-50/50 border-brand-300 text-brand-900"
-                                : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() =>
-                                toggleCompanySelection(c.code, inviteAllowedCompanies, setInviteAllowedCompanies)
-                              }
-                              className="w-3.5 h-3.5 text-brand-600 rounded border-slate-300 focus:ring-brand-500"
-                            />
-                            <span className="font-bold font-mono">{c.code}</span>
-                            <span className="text-[10px] text-slate-400 truncate">({c.name})</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* Actions */}

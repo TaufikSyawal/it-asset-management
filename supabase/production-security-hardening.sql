@@ -39,7 +39,6 @@ set search_path = public, pg_temp
 stable
 as $$
   select case 
-    when current_setting('is_superuser') = 'on' or current_user in ('postgres', 'service_role', 'supabase_admin') then 'SUPER_ADMIN'::public.user_role
     when auth.uid() is null then null
     else (select role from public.user_profiles where id = auth.uid() and is_active = true)
   end;
@@ -54,7 +53,6 @@ set search_path = public, pg_temp
 stable
 as $$
   select case 
-    when current_setting('is_superuser') = 'on' or current_user in ('postgres', 'service_role', 'supabase_admin') then true
     when auth.uid() is null or target_company_id is null then false
     else exists (
       select 1 from public.user_profiles up
@@ -81,7 +79,6 @@ set search_path = public, pg_temp
 stable
 as $$
   select case 
-    when current_setting('is_superuser') = 'on' or current_user in ('postgres', 'service_role', 'supabase_admin') then true
     when auth.uid() is null then false
     else exists (
       select 1 from public.user_profiles
@@ -101,7 +98,6 @@ set search_path = public, pg_temp
 stable
 as $$
   select case 
-    when current_setting('is_superuser') = 'on' or current_user in ('postgres', 'service_role', 'supabase_admin') then true
     when auth.uid() is null then false
     else exists (
       select 1 from public.user_profiles
@@ -121,7 +117,6 @@ set search_path = public, pg_temp
 stable
 as $$
   select case 
-    when current_setting('is_superuser') = 'on' or current_user in ('postgres', 'service_role', 'supabase_admin') then true
     when auth.uid() is null then false
     else exists (
       select 1 from public.user_profiles
@@ -141,7 +136,6 @@ set search_path = public, pg_temp
 stable
 as $$
   select case 
-    when current_setting('is_superuser') = 'on' or current_user in ('postgres', 'service_role', 'supabase_admin') then true
     when auth.uid() is null then false
     else exists (
       select 1 from public.user_profiles
@@ -354,11 +348,6 @@ declare
   v_in_assignment text;
   v_in_opname text;
 begin
-  -- Allow direct maintenance when running as database administrator / service role
-  if current_setting('is_superuser') = 'on' or current_user in ('postgres', 'service_role', 'supabase_admin') then
-    return new;
-  end if;
-
   v_in_assignment := current_setting('app.in_assignment_rpc', true);
   v_in_opname := current_setting('app.in_stock_opname_rpc', true);
 

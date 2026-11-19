@@ -7,7 +7,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const ALLOWED_ROLES = ["SUPER_ADMIN", "MANAGEMENT", "IT_ADMIN", "FINANCE", "AUDITOR", "EMPLOYEE"];
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -78,7 +77,7 @@ serve(async (req: Request) => {
 
     switch (action) {
       case "invite_user": {
-        const { email, name, role = "EMPLOYEE", allCompanies = false, allowedCompanies = [] } = body;
+        const { email, name } = body;
 
         if (!email || typeof email !== "string" || !EMAIL_REGEX.test(email.trim())) {
           return new Response(
@@ -87,19 +86,21 @@ serve(async (req: Request) => {
           );
         }
 
-        const targetRole = ALLOWED_ROLES.includes(role) ? role : "EMPLOYEE";
         const cleanEmail = email.trim().toLowerCase();
         const cleanName = (name && typeof name === "string" ? name.trim() : cleanEmail.split("@")[0]);
-        const targetAllCompanies = Boolean(allCompanies);
-        const targetAllowedCompanies = Array.isArray(allowedCompanies)
-          ? allowedCompanies.filter((c: any) => typeof c === "string" && c.trim().length > 0)
-          : [];
 
         // Check if user already exists
-        const { data: existingProfiles } = await adminClient
+        const { data: existingProfiles, error: checkError } = await adminClient
           .from("user_profiles")
           .select("id, email")
           .eq("email", cleanEmail);
+
+        if (checkError) {
+          return new Response(
+            JSON.stringify({ error: "Database error during user existence check: " + checkError.message }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
 
         if (existingProfiles && existingProfiles.length > 0) {
           return new Response(
@@ -116,38 +117,45 @@ serve(async (req: Request) => {
           }
         );
 
-        if (inviteError) {
+        if (inviteError || !inviteData?.user) {
           return new Response(
-            JSON.stringify({ error: inviteError.message }),
+            JSON.stringify({ error: inviteError?.message || "Failed to dispatch invitation from Auth service." }),
             { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
 
         const newUserId = inviteData.user.id;
 
-        // Upsert user profile (default to EMPLOYEE with empty companies unless Super Admin specified)
+        // MANDATORY SECURITY RULE: All newly created users strictly receive initial EMPLOYEE role
+        // with zero company access (all_companies = false, allowed_companies = []).
+        // Elevated permissions and company scope must be explicitly assigned via Edit User.
         const { error: profileUpsertError } = await adminClient
           .from("user_profiles")
           .upsert({
             id: newUserId,
             email: cleanEmail,
             name: cleanName,
-            role: targetRole,
-            all_companies: targetAllCompanies,
-            allowed_companies: targetAllowedCompanies,
+            role: "EMPLOYEE",
+            all_companies: false,
+            allowed_companies: [],
             is_active: true,
             updated_at: new Date().toISOString(),
           });
 
         if (profileUpsertError) {
-          console.error("Error creating user profile after auth invite:", profileUpsertError);
+          // Rollback created auth user if profile initialization fails
+          await adminClient.auth.admin.deleteUser(newUserId);
+          return new Response(
+            JSON.stringify({ error: "Failed to initialize user database profile: " + profileUpsertError.message }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
         }
 
         return new Response(
           JSON.stringify({
             success: true,
-            message: `Invitation successfully sent to ${cleanEmail}. Assigned role: ${targetRole}.`,
-            user: { id: newUserId, email: cleanEmail, name: cleanName, role: targetRole },
+            message: `Invitation successfully sent to ${cleanEmail}. Assigned baseline role: EMPLOYEE (zero company access).`,
+            user: { id: newUserId, email: cleanEmail, name: cleanName, role: "EMPLOYEE" },
           }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
@@ -163,14 +171,14 @@ serve(async (req: Request) => {
         }
 
         const cleanEmail = email.trim().toLowerCase();
-        const { data: linkData, error: linkError } = await adminClient.auth.admin.generateLink({
-          type: "recovery",
-          email: cleanEmail,
-        });
 
-        if (linkError) {
+        // MANDATORY SECURITY RULE: Dispatch recovery email directly to user's registered inbox.
+        // Never generate or expose recovery tokens, action links, or credentials in API responses or server logs.
+        const { error: resetError } = await adminClient.auth.resetPasswordForEmail(cleanEmail);
+
+        if (resetError) {
           return new Response(
-            JSON.stringify({ error: linkError.message }),
+            JSON.stringify({ error: resetError.message }),
             { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
@@ -178,8 +186,7 @@ serve(async (req: Request) => {
         return new Response(
           JSON.stringify({
             success: true,
-            message: `Password recovery link successfully generated for ${cleanEmail}.`,
-            recoveryUrl: linkData?.properties?.action_link,
+            message: `A secure password recovery email has been dispatched directly to ${cleanEmail}.`,
           }),
           { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
@@ -223,17 +230,7 @@ serve(async (req: Request) => {
           }
         }
 
-        // Ban or unban user in Supabase Auth
-        const banDuration = targetActive ? "none" : "876000h"; // ~100 years
-        const { error: banError } = await adminClient.auth.admin.updateUserById(userId, {
-          ban_duration: banDuration,
-        });
-
-        if (banError) {
-          console.warn("Auth admin ban update notice:", banError.message);
-        }
-
-        // Update is_active in user_profiles
+        // Transactional consistency: Update database profile first
         const { error: updateError } = await adminClient
           .from("user_profiles")
           .update({ is_active: targetActive, updated_at: new Date().toISOString() })
@@ -241,8 +238,23 @@ serve(async (req: Request) => {
 
         if (updateError) {
           return new Response(
-            JSON.stringify({ error: updateError.message }),
+            JSON.stringify({ error: "Failed to update user profile status: " + updateError.message }),
             { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
+
+        // Update Auth ban duration only after database profile update succeeds
+        const banDuration = targetActive ? "none" : "876000h"; // ~100 years
+        const { error: banError } = await adminClient.auth.admin.updateUserById(userId, {
+          ban_duration: banDuration,
+        });
+
+        if (banError) {
+          // Revert profile status if Auth ban update fails to prevent inconsistent state
+          await adminClient.from("user_profiles").update({ is_active: !targetActive }).eq("id", userId);
+          return new Response(
+            JSON.stringify({ error: "Failed to update authentication account ban status: " + banError.message }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
           );
         }
 
@@ -290,9 +302,15 @@ serve(async (req: Request) => {
         }
 
         // Delete from user_profiles first, then auth.users
-        await adminClient.from("user_profiles").delete().eq("id", userId);
-        const { error: deleteAuthError } = await adminClient.auth.admin.deleteUser(userId);
+        const { error: profileDeleteError } = await adminClient.from("user_profiles").delete().eq("id", userId);
+        if (profileDeleteError) {
+          return new Response(
+            JSON.stringify({ error: "Failed to delete user profile: " + profileDeleteError.message }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
 
+        const { error: deleteAuthError } = await adminClient.auth.admin.deleteUser(userId);
         if (deleteAuthError) {
           console.warn("Auth deletion note:", deleteAuthError.message);
         }

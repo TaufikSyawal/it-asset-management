@@ -247,7 +247,7 @@ export async function inviteUser(payload: {
 /**
  * Initiate administrative password reset for a user via secure backend Edge Function
  */
-export async function resetUserPassword(email: string): Promise<{ success: boolean; message?: string; recoveryUrl?: string; error?: string | null }> {
+export async function resetUserPassword(email: string): Promise<{ success: boolean; message?: string; error?: string | null }> {
   if (!isSupabaseConfigured()) {
     return { success: false, error: "Database is not configured." };
   }
@@ -273,8 +273,7 @@ export async function resetUserPassword(email: string): Promise<{ success: boole
 
     return {
       success: true,
-      message: edgeRes.message || `Password recovery dispatched for ${cleanEmail}.`,
-      recoveryUrl: edgeRes.recoveryUrl,
+      message: edgeRes.message || `Password recovery email dispatched for ${cleanEmail}.`,
     };
   } catch (err: any) {
     return { success: false, error: err.message || "Failed to initiate administrative password reset." };

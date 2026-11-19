@@ -1,5 +1,5 @@
 -- ==============================================================================
--- ROLLBACK SCRIPT: CENTRALIZED USER MANAGEMENT & RBAC GOVERNANCE (REV 5)
+-- ROLLBACK SCRIPT: CENTRALIZED USER MANAGEMENT & RBAC GOVERNANCE (REV 6)
 -- Purpose: Safely rolls back User Management triggers, anti-escalation rules,
 -- and audit trail policies to the pre-migration baseline.
 -- Target: Supabase PostgreSQL (dhwtybzvkhcsqzrtgohn)
@@ -8,12 +8,16 @@
 begin;
 
 -- 1. DROP SECURITY TRIGGERS
+drop trigger if exists trg_log_user_profile_deletion on public.user_profiles;
 drop trigger if exists trg_log_user_profile_changes on public.user_profiles;
+drop trigger if exists trg_log_user_profile_creation on public.user_profiles;
 drop trigger if exists trg_protect_last_super_admin on public.user_profiles;
 drop trigger if exists trg_prevent_unauthorized_profile_updates on public.user_profiles;
 
 -- 2. DROP TRIGGER FUNCTIONS
+drop function if exists public.log_user_profile_deletion();
 drop function if exists public.log_user_profile_changes();
+drop function if exists public.log_user_profile_creation();
 drop function if exists public.protect_last_super_admin();
 drop function if exists public.prevent_unauthorized_profile_updates();
 
